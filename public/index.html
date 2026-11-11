@@ -1,0 +1,188 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>AION</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, system-ui, sans-serif; }
+    body { background: #08080a; color: #f4f4f5; padding: 18px 16px; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .brand { font-size: 1rem; font-weight: 800; letter-spacing: 2px; color: #fff; }
+    .dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    button { background: #121316; border: 1px solid #22242a; color: #eee; padding: 14px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: 0.1s; }
+    button:active { background: #1c1e24; transform: scale(0.97); }
+    .btn-wake { border-color: #065f46; color: #34d399; }
+    .btn-danger { border-color: #7f1d1d; color: #f87171; }
+    .remote-card {
+      grid-column: span 2;
+      background: #0d1322;
+      border: 1px solid #1e3a8a;
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    }
+    .remote-card:active {
+      background: #172554;
+      transform: scale(0.98);
+    }
+    .remote-info {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      text-align: left;
+    }
+    .remote-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #93c5fa;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .remote-sub {
+      font-size: 0.72rem;
+      color: #60a5fa;
+      opacity: 0.85;
+      font-family: ui-monospace, monospace;
+    }
+    .btn-fallback {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: ui-monospace, monospace;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+    }
+    .btn-fallback:hover {
+      border-color: #3b82f6;
+      color: #93c5fa;
+    }
+    .btn-fallback:active {
+      background: #334155;
+      transform: scale(0.95);
+    }
+    .voice-box { display: flex; gap: 8px; margin-bottom: 14px; }
+    input { flex: 1; background: #121316; border: 1px solid #22242a; border-radius: 12px; color: #fff; padding: 12px; font-size: 0.9rem; outline: none; }
+    input:focus { border-color: #3b82f6; }
+    .mic-btn { width: 48px; background: #2563eb; border: none; border-radius: 12px; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; }
+    .terminal { flex: 1; background: #020203; border: 1px solid #18191f; border-radius: 12px; padding: 12px; font-family: ui-monospace, monospace; font-size: 0.72rem; color: #34d399; overflow-y: auto; white-space: pre-wrap; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">A I O N</div>
+    <div class="dot"></div>
+  </header>
+  
+  <div class="grid">
+    <button class="btn-wake" onclick="sendCmd('wake_pc')">⚡ Wake PC</button>
+    <button onclick="sendCmd('lock')">🔒 Lock Session</button>
+    <button onclick="sendCmd('sleep')">🌙 Suspend</button>
+    <button class="btn-danger" onclick="killTarget()">❌ Kill Task</button>
+    
+    <div class="remote-card" onclick="openRemote('100.127.64.25')">
+      <div class="remote-info">
+        <div class="remote-title">🖥️ Remote Desktop</div>
+        <div class="remote-sub">Tailscale 100.127.64.25</div>
+      </div>
+      <button class="btn-fallback" onclick="event.stopPropagation(); openRemote('97842475')" title="Fallback to RustDesk ID">
+        ID: 97842475
+      </button>
+    </div>
+  </div>
+
+  <div class="voice-box">
+    <input type="text" id="aiInput" placeholder="Command or ask Antigravity...">
+    <button class="mic-btn" onclick="toggleVoice()">🎙️</button>
+  </div>
+
+  <div class="terminal" id="term">Connecting to AION mesh stream...\n</div>
+
+  <script>
+    const API = window.location.origin;
+
+    async function sendCmd(action, target = '') {
+      await fetch(`${API}/api/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, target })
+      });
+    }
+
+    function openRemote(target = '100.127.64.25') {
+      const isIp = target.includes('.');
+      const uri = `rustdesk://${target}`;
+      const term = document.getElementById('term');
+      if (term) {
+        term.textContent += `> [P2P]: Launching RustDesk ${isIp ? 'Tailscale' : 'ID'} session (${uri})...\n`;
+        if (isIp) {
+          term.textContent += `> [P2P]: Tip: Tap 'ID: 97842475' if Tailscale mesh is unreachable.\n`;
+        }
+        term.scrollTop = term.scrollHeight;
+      }
+      window.location.href = uri;
+    }
+
+    function killTarget() {
+      const target = prompt('Process name to kill (e.g. Valorant, node):');
+      if (target) sendCmd('kill_process', target);
+    }
+
+    const evtSource = new EventSource(`${API}/api/logs`);
+    const term = document.getElementById('term');
+    evtSource.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      term.textContent += data.log;
+      term.scrollTop = term.scrollHeight;
+    };
+
+    function toggleVoice() {
+      const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Speech) return alert('Speech not available on this browser.');
+      const rec = new Speech();
+      rec.lang = 'en-US';
+      rec.onresult = (e) => {
+        const text = e.results[0][0].transcript;
+        document.getElementById('aiInput').value = text;
+        submitAI(text);
+      };
+      rec.start();
+    }
+
+    async function submitAI(prompt) {
+      term.textContent += `\n> [USER]: ${prompt}\n`;
+      const res = await fetch(`${API}/api/ai`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+      const data = await res.json();
+      term.textContent += `> [AION-AGY]: ${data.response}\n`;
+      term.scrollTop = term.scrollHeight;
+    }
+
+    document.getElementById('aiInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        submitAI(e.target.value);
+        e.target.value = '';
+      }
+    });
+  </script>
+</body>
+</html>
