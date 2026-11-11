@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Local agent & skills configuration
+.agents/
+
+# Logs and runtime traces
+*.log
+*.log.*
+
+# Environment variables & local secrets
+.env
+.env.*
+*.env
+*.local
+
+# Temporary, backup, and fallback scripts
+lock.bat
+lock.vbs
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# OS-specific files
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
