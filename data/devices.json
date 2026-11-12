@@ -1,0 +1,21 @@
+{
+  "devices": {
+    "test-device-1": {
+      "id": "test-device-1",
+      "name": "Living Room PC",
+      "type": "desktop",
+      "mac": "AA:BB:CC:DD:EE:FF",
+      "lanIp": "192.168.1.150",
+      "updatedAt": "2026-11-12T20:18:16.244Z"
+    },
+    "local": {
+      "id": "local",
+      "name": "Primary Workstation",
+      "type": "desktop",
+      "mac": "74:56:3C:2E:D6:BA",
+      "lanIp": "169.254.83.107",
+      "tailscaleIp": "100.127.64.25",
+      "updatedAt": "2026-11-12T20:26:33.869Z"
+    }
+  }
+}

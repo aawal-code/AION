@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # AION
 ### Autonomous Interactive Operations Node
@@ -106,6 +106,8 @@ export function sanitizeCommand(action, target = '') {
 | `/api/sync/status` | `GET` | `application/json` | Resolves local `config.xml` token and queries active folder metrics. |
 | `/api/sync/folder` | `POST` | `{"id", "path", ...}` | Dynamically provisions shared paths across cluster nodes. |
 | `/api/sync/device` | `POST` | `{"deviceID", ...}` | Mutual TLS peer device pairing across the mesh. |
+| `/api/system/update/check` | `GET` | `application/json` | Checks local semver against GitHub Releases API with commit fallback. |
+| `/api/system/update/apply` | `POST` | `application/json` | Fetches latest tracked release/branch and hot-restarts the daemon. |
 
 ---
 
@@ -122,18 +124,24 @@ npm test
 
 ```
 ▶ Architecture & Zero-Dependency Validation
-  ✔ verifies zero runtime npm dependencies (1.15ms)
-  ✔ verifies no hardcoded absolute user profiles exist in source code (2.24ms)
-✔ Architecture & Zero-Dependency Validation (4.26ms)
+  ✔ verifies zero runtime npm dependencies (1.67ms)
+  ✔ verifies no hardcoded absolute user profiles exist in source code (2.18ms)
+✔ Architecture & Zero-Dependency Validation (4.89ms)
 
 ▶ OS Command Sanitization
-  ✔ permits valid whitelisted actions (0.71ms)
-  ✔ permits valid process target for kill_process (0.16ms)
-  ✔ rejects shell injection attempts in action (0.36ms)
-  ✔ rejects shell injection attempts in kill target (0.17ms)
-✔ OS Command Sanitization (2.78ms)
+  ✔ permits valid whitelisted actions (1.22ms)
+  ✔ permits valid process target for kill_process (with and without .exe, lowercase, spaces) (0.35ms)
+  ✔ rejects shell injection attempts in action (0.66ms)
+  ✔ rejects shell injection attempts in kill target (0.26ms)
+  ✔ killProcess returns clean JSON status when target is not currently running without throwing (299.38ms)
+✔ OS Command Sanitization (304.26ms)
 
-ℹ tests 6 | suites 2 | pass 6 | fail 0 | cancelled 0
+▶ Updater Service Logic
+  ✔ getLocalVersion returns valid semver string from package.json (1.28ms)
+  ✔ compareVersions accurately identifies newer, older, and identical versions (0.29ms)
+✔ Updater Service Logic (3.34ms)
+
+ℹ tests 9 | suites 3 | pass 9 | fail 0 | cancelled 0
 ```
 
 ---
@@ -164,14 +172,20 @@ node src/server.js
 To configure AION as an elevated background daemon that persists across reboots while retaining interactive session rights:
 
 ```powershell
-$nodePath = (Get-Command node).Source
-$action = New-ScheduledTaskAction -Execute $nodePath -Argument "src/server.js" -WorkingDirectory "C:\aion"
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
-
-Register-ScheduledTask -TaskName "AionDaemon" -Action $action -Trigger $trigger -Principal $principal
-Start-ScheduledTask -TaskName "AionDaemon"
+# Run the automated installer
+powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
 ```
+
+### Linux Engine Setup (systemd user service)
+
+For Linux systems (Ubuntu, Debian, Fedora, Arch, openSUSE), run the distro-agnostic installer with zero-root requirements:
+
+```bash
+chmod +x scripts/install.sh
+./scripts/install.sh
+```
+
+This provisions Node.js v20+ if missing, installs a `.desktop` menu launcher with scalable icon, and starts the daemon under `systemd --user` preserving interactive `DISPLAY`, `WAYLAND_DISPLAY`, and `DBUS_SESSION_BUS_ADDRESS` permissions.
 
 ---
 
@@ -183,14 +197,22 @@ aion/
 │   ├── routes/
 │   │   └── router.js        # Native HTTP route dispatcher
 │   ├── services/
-│   │   ├── os.js            # Win32 & POSIX session handling
+│   │   ├── os.js            # Win32 & Linux session handling & process assassin
 │   │   ├── syncthing.js     # Loopback REST client & XML credential parser
 │   │   ├── ai-bridge.js     # Sandboxed CLI runner
+│   │   ├── updater.js       # Atomic GitHub release auto-updater & hot restart
 │   │   └── sse.js           # Server-Sent Events distribution engine
 │   ├── utils/
 │   │   └── sanitizer.js     # Strict action whitelisting & injection defenses
 │   └── server.js            # Runtime bootstrap & OS signal handling
-├── public/                  # Mobile PWA controller assets
+├── scripts/
+│   ├── setup.ps1            # Windows standalone installer & Task Scheduler setup
+│   └── install.sh           # Universal Linux installer & systemd user service setup
+├── public/                  # Enterprise PWA controller assets
+│   ├── index.html           # Hardware cockpit interface (EN, AR, DE)
+│   ├── manifest.json        # Standalone PWA web app manifest
+│   ├── sw.js                # App shell offline caching service worker
+│   └── icon.svg             # Vector glyph
 ├── tests/                   # Native node:test validation suites
 ├── docs/                    # Architectural assets & demo recordings
 └── package.json             # Manifest declaring zero dependencies

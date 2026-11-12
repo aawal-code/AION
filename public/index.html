@@ -1,188 +1,630 @@
-﻿<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" dir="ltr" data-theme="macos-dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#141517" id="metaThemeColor">
+  
   <title>AION</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, system-ui, sans-serif; }
-    body { background: #08080a; color: #f4f4f5; padding: 18px 16px; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    .brand { font-size: 1rem; font-weight: 800; letter-spacing: 2px; color: #fff; }
-    .dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-    button { background: #121316; border: 1px solid #22242a; color: #eee; padding: 14px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: 0.1s; }
-    button:active { background: #1c1e24; transform: scale(0.97); }
-    .btn-wake { border-color: #065f46; color: #34d399; }
-    .btn-danger { border-color: #7f1d1d; color: #f87171; }
-    .remote-card {
-      grid-column: span 2;
-      background: #0d1322;
-      border: 1px solid #1e3a8a;
-      border-radius: 12px;
-      padding: 12px 14px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
-      transition: background 0.15s, border-color 0.15s, transform 0.1s;
-    }
-    .remote-card:active {
-      background: #172554;
-      transform: scale(0.98);
-    }
-    .remote-info {
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-      text-align: left;
-    }
-    .remote-title {
-      font-size: 0.88rem;
-      font-weight: 700;
-      color: #93c5fa;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .remote-sub {
-      font-size: 0.72rem;
-      color: #60a5fa;
-      opacity: 0.85;
-      font-family: ui-monospace, monospace;
-    }
-    .btn-fallback {
-      background: #1e293b;
-      border: 1px solid #334155;
-      color: #cbd5e1;
-      padding: 6px 10px;
-      border-radius: 8px;
-      font-size: 0.72rem;
-      font-weight: 600;
-      font-family: ui-monospace, monospace;
-      cursor: pointer;
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
-      transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
-    }
-    .btn-fallback:hover {
-      border-color: #3b82f6;
-      color: #93c5fa;
-    }
-    .btn-fallback:active {
-      background: #334155;
-      transform: scale(0.95);
-    }
-    .voice-box { display: flex; gap: 8px; margin-bottom: 14px; }
-    input { flex: 1; background: #121316; border: 1px solid #22242a; border-radius: 12px; color: #fff; padding: 12px; font-size: 0.9rem; outline: none; }
-    input:focus { border-color: #3b82f6; }
-    .mic-btn { width: 48px; background: #2563eb; border: none; border-radius: 12px; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; }
-    .terminal { flex: 1; background: #020203; border: 1px solid #18191f; border-radius: 12px; padding: 12px; font-family: ui-monospace, monospace; font-size: 0.72rem; color: #34d399; overflow-y: auto; white-space: pre-wrap; line-height: 1.45; }
-  </style>
+
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/icon.svg">
+
+  <!-- Apple Typography: Manrope for EN/DE & Cairo for Arabic, with clean local system fallbacks -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Modular Stylesheets -->
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-  <header>
-    <div class="brand">A I O N</div>
-    <div class="dot"></div>
-  </header>
-  
-  <div class="grid">
-    <button class="btn-wake" onclick="sendCmd('wake_pc')">⚡ Wake PC</button>
-    <button onclick="sendCmd('lock')">🔒 Lock Session</button>
-    <button onclick="sendCmd('sleep')">🌙 Suspend</button>
-    <button class="btn-danger" onclick="killTarget()">❌ Kill Task</button>
+  <div class="app-layout">
     
-    <div class="remote-card" onclick="openRemote('100.127.64.25')">
-      <div class="remote-info">
-        <div class="remote-title">🖥️ Remote Desktop</div>
-        <div class="remote-sub">Tailscale 100.127.64.25</div>
+    <!-- Mobile Sidebar Backdrop -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <!-- ================================================================= -->
+    <!-- LEFT SIDEBAR (240px Fixed on Desktop, Slide-Over on Mobile)       -->
+    <!-- ================================================================= -->
+    <aside class="app-sidebar" id="appSidebar">
+      <!-- Sidebar Top Header -->
+      <header class="sidebar-header">
+        <div class="brand">
+          <div class="brand-icon-box">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+              <polyline points="2 17 12 22 22 17"></polyline>
+              <polyline points="2 12 12 17 22 12"></polyline>
+            </svg>
+          </div>
+          <span class="brand-name" data-i18n="brandTitle">AION</span>
+        </div>
+        <button class="icon-btn" id="btnOpenSettings" type="button" data-i18n-title="navSettings" title="Settings">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </header>
+
+      <!-- Sidebar Navigation Scroll -->
+      <div class="sidebar-nav-scroll">
+        <!-- Devices Section -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title" data-i18n="navDevices">Devices</div>
+          
+          <!-- All Devices Overview Row -->
+          <button class="sidebar-nav-item" id="navItemAllDevices" type="button">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+              <path d="M8 21h8"></path>
+              <path d="M12 17v4"></path>
+            </svg>
+            <span class="sidebar-item-label" data-i18n="deviceSelectorAll">All Devices</span>
+            <span class="sidebar-badge" id="sidebarDeviceCount">0</span>
+          </button>
+
+          <!-- Registered Devices Live List -->
+          <div class="sidebar-device-list" id="sidebarDevicesList">
+            <!-- Populated dynamically by devices.js -->
+          </div>
+        </div>
+
+        <!-- Workspace Section -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title" data-i18n="sectionWorkspace">Workspace</div>
+          
+          <button class="sidebar-nav-item" id="navItemAssistant" type="button">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+            </svg>
+            <span class="sidebar-item-label" data-i18n="navChat">Assistant &amp; Chat</span>
+          </button>
+        </div>
       </div>
-      <button class="btn-fallback" onclick="event.stopPropagation(); openRemote('97842475')" title="Fallback to RustDesk ID">
-        ID: 97842475
-      </button>
+
+      <!-- Sidebar Footer -->
+      <footer class="sidebar-footer">
+        <div class="sidebar-status-pill">
+          <span class="status-dot"></span>
+          <span data-i18n="statusOperational">Running smoothly</span>
+        </div>
+      </footer>
+    </aside>
+
+    <!-- ================================================================= -->
+    <!-- RIGHT MAIN CANVAS (Remaining Width, Max 920px Content)            -->
+    <!-- ================================================================= -->
+    <main class="app-canvas" id="appCanvas">
+      
+      <!-- Mobile Top Bar (Hidden on Desktop) -->
+      <div class="mobile-top-bar">
+        <button class="icon-btn" id="btnToggleSidebarMobile" type="button" aria-label="Open Sidebar">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <span class="mobile-top-title" id="mobileTopTitle">AION</span>
+        <button class="icon-btn" id="btnMobileSettings" type="button" aria-label="Settings">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Canvas Inner Centered Container -->
+      <div class="canvas-inner">
+        
+        <!-- =============================================================== -->
+        <!-- CANVAS VIEW 1: ACTIVE DEVICE VIEW & CONTROLS                    -->
+        <!-- =============================================================== -->
+        <div id="canvasDeviceView">
+          <!-- Device Hero Header Row -->
+          <div class="device-hero-header">
+            <div>
+              <div class="device-hero-title-row">
+                <h1 class="device-hero-title" id="canvasDeviceName">Main PC</h1>
+                <button class="device-edit-btn" id="btnEditCurrentDevice" type="button" data-i18n-title="editDeviceTitle" title="Edit Device Details">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="device-hero-subtitle" id="canvasDeviceSubtitle">Desktop &bull; Windows &bull; WoL Ready</div>
+            </div>
+
+            <div class="device-hero-actions">
+              <span class="device-status-pill online" id="canvasDeviceStatusPill">
+                <span class="status-dot"></span>
+                <span id="canvasDeviceStatusText" data-i18n="statusConnected">Connected</span>
+              </span>
+              <button class="btn-primary" id="btnCanvasWake" type="button" style="display: none; padding: 6px 14px; font-size: 12px;">
+                <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                  <line x1="12" y1="2" x2="12" y2="12"></line>
+                </svg>
+                <span data-i18n="btnWake">Wake PC</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Section 1: Power & Display (4 Equal-Width Tactile Tiles) -->
+          <section class="canvas-section">
+            <div class="section-heading" data-i18n="sectionPowerDisplay">Power &amp; Display</div>
+            <div class="power-display-grid">
+              <!-- Tile 1: Lock -->
+              <button class="power-tile" id="tileLock" type="button">
+                <div class="power-tile-icon">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                </div>
+                <span class="power-tile-label" data-i18n="tileLock">Lock</span>
+              </button>
+
+              <!-- Tile 2: Screen Off -->
+              <button class="power-tile" id="tileScreenOff" type="button">
+                <div class="power-tile-icon">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                    <line x1="2" y1="3" x2="22" y2="17" stroke-dasharray="2 2"></line>
+                  </svg>
+                </div>
+                <span class="power-tile-label" data-i18n="tileScreenOff">Screen Off</span>
+              </button>
+
+              <!-- Tile 3: Sleep -->
+              <button class="power-tile" id="tileSleep" type="button">
+                <div class="power-tile-icon">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                  </svg>
+                </div>
+                <span class="power-tile-label" data-i18n="tileSleep">Sleep</span>
+              </button>
+
+              <!-- Tile 4: Shut Down (Destructive) -->
+              <button class="power-tile power-tile-danger" id="tileShutdown" type="button">
+                <div class="power-tile-icon">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                    <line x1="12" y1="2" x2="12" y2="12"></line>
+                  </svg>
+                </div>
+                <span class="power-tile-label" data-i18n="tileShutdown">Shut Down</span>
+              </button>
+            </div>
+          </section>
+
+          <!-- Section 2: Running Apps (Clean Borderless Rows) -->
+          <section class="canvas-section">
+            <div class="section-heading-row">
+              <div class="section-heading" data-i18n="runningAppsTitle">Running Applications</div>
+              <button class="btn-subtle" id="btnToggleAllProcesses" type="button" style="display: none;">Show all</button>
+            </div>
+            <div class="running-apps-list" id="canvasProcessesList">
+              <!-- Populated dynamically by devices.js -->
+            </div>
+          </section>
+
+          <!-- Section 3: Recent Activity (Compact 3 Most Recent Actions) -->
+          <section class="canvas-section">
+            <div class="section-heading" data-i18n="activityTitle">Recent Activity</div>
+            <div class="compact-activity-list" id="canvasActivityList">
+              <!-- Populated dynamically by devices.js -->
+            </div>
+          </section>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- CANVAS VIEW 2: ALL DEVICES OVERVIEW                             -->
+        <!-- =============================================================== -->
+        <div id="canvasAllDevicesView" style="display: none;">
+          <header class="view-header">
+            <h1 class="view-title" data-i18n="allDevicesTitle">All Devices</h1>
+            <p class="view-subtitle" data-i18n="allDevicesSubtitle">Connected workstations, laptops, and mobile peers</p>
+          </header>
+          <div class="device-cards-grid" id="allDevicesCardsGrid">
+            <!-- Populated dynamically by devices.js -->
+          </div>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- CANVAS VIEW 3: ASSISTANT & CHAT                                 -->
+        <!-- =============================================================== -->
+        <div id="canvasChatView" style="display: none;">
+          <header class="view-header">
+            <h1 class="view-title" data-i18n="viewChatTitle">Personal Assistant</h1>
+            <p class="view-subtitle" data-i18n="viewChatSubtitle">Ask anything, draft messages, or control your system.</p>
+          </header>
+
+          <div class="chat-container">
+            <div class="chat-messages" id="chatMessagesContainer">
+              <!-- Populated dynamically by app.js -->
+            </div>
+            
+            <div class="chat-suggestions-wrapper">
+              <div class="chat-suggestions">
+                <button class="prompt-chip" data-prompt="Lock screen" type="button">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                  <span data-i18n="chipLock">Lock screen</span>
+                </button>
+                <button class="prompt-chip" data-prompt="Put computer to sleep" type="button">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                  </svg>
+                  <span data-i18n="chipSleep">Put computer to sleep</span>
+                </button>
+                <button class="prompt-chip" data-prompt="How is the sync status?" type="button">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                  <span data-i18n="chipSyncStatus">How is sync status?</span>
+                </button>
+                <button class="prompt-chip" data-prompt="Turn off screen" type="button">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                  </svg>
+                  <span data-i18n="actionScreenOff">Turn Off Screen</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- =============================================================== -->
+      <!-- UNIFIED BOTTOM DOCKED COMMAND BAR (Pinned Capsule)              -->
+      <!-- =============================================================== -->
+      <div class="command-bar-wrapper">
+        <form class="command-bar" id="commandBarForm" autocomplete="off">
+          <input 
+            type="text" 
+            class="command-input" 
+            id="commandInput" 
+            data-i18n-placeholder="commandPlaceholder" 
+            placeholder="Ask or command anything..." 
+            aria-label="Command Input"
+          >
+          <div class="command-actions">
+            <!-- Voice Dictation Button -->
+            <button class="command-btn command-btn-mic" id="commandMicBtn" type="button" data-i18n-title="commandMic" title="Voice input">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            </button>
+            <!-- Send Prompt / Command Button -->
+            <button class="command-btn command-btn-send" id="commandSendBtn" type="submit" data-i18n-title="commandSend" title="Send">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+        </form>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- SETTINGS MODAL (macOS Grouped Rows)                                 -->
+  <!-- =================================================================== -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-box settings-modal-box" role="dialog" aria-modal="true">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 14px;">
+        <div>
+          <h2 class="modal-title" data-i18n="viewSettingsTitle">Preferences</h2>
+          <p class="modal-desc" data-i18n="viewSettingsSubtitle">Customize language, appearance, and developer options.</p>
+        </div>
+        <button class="icon-btn" id="btnCloseSettings" type="button" aria-label="Close">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Group 1: Language Switcher -->
+      <div class="settings-group">
+        <div class="settings-group-title" data-i18n="sectionLanguage">Language</div>
+        <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;" data-i18n="sectionLanguageDesc">Choose your preferred language. The layout flips instantly between RTL and LTR.</p>
+        <div class="lang-segmented">
+          <button class="lang-btn active" data-lang="en" type="button">English</button>
+          <button class="lang-btn" data-lang="ar" type="button">العربية</button>
+          <button class="lang-btn" data-lang="de" type="button">Deutsch</button>
+        </div>
+      </div>
+
+      <!-- Group 2: Appearance & Theme Presets -->
+      <div class="settings-group">
+        <div class="settings-group-title" data-i18n="sectionAppearance">Appearance</div>
+        <div style="font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);" data-i18n="themePresets">Theme Presets</div>
+        <div class="theme-presets-grid" id="themePresetsGrid">
+          <!-- Dynamically populated by app.js -->
+        </div>
+
+        <div style="margin-top: 16px;">
+          <div style="font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);" data-i18n="customColorsTitle">Custom Palette Pickers</div>
+          <div class="color-pickers-row">
+            <div class="color-picker-item">
+              <span style="font-size: 12.5px; font-weight: 500;" data-i18n="colorBg">Background</span>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="color" class="color-input-swatch" id="colorPickerBg" value="#141517">
+                <span class="color-hex-label" id="colorLabelBg">Default</span>
+              </div>
+            </div>
+
+            <div class="color-picker-item">
+              <span style="font-size: 12.5px; font-weight: 500;" data-i18n="colorSurface">Cards &amp; Surfaces</span>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="color" class="color-input-swatch" id="colorPickerSurface" value="#1e1f23">
+                <span class="color-hex-label" id="colorLabelSurface">Default</span>
+              </div>
+            </div>
+
+            <div class="color-picker-item">
+              <span style="font-size: 12.5px; font-weight: 500;" data-i18n="colorAccent">Accent Tint</span>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="color" class="color-input-swatch" id="colorPickerAccent" value="#0a84ff">
+                <span class="color-hex-label" id="colorLabelAccent">Default</span>
+              </div>
+            </div>
+          </div>
+
+          <button class="reset-colors-btn" id="btnResetColors" type="button">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span data-i18n="resetColors">Reset to Theme Defaults</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Group 3: Wake-on-LAN Status -->
+      <div class="settings-group">
+        <div class="settings-group-title" data-i18n="wolSectionTitle">Wake-on-LAN Status</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
+          <span style="font-size: 13px; color: var(--text-secondary);">Adapter WoL Capability</span>
+          <span id="settingsWolStatusBadge" class="sidebar-badge" style="font-size: 12px; padding: 2px 8px;">Checking...</span>
+        </div>
+        <button class="btn-secondary" id="btnEnableWol" type="button" style="display: none; align-self: flex-start; margin-top: 6px; font-size: 12.5px;">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+            <line x1="12" y1="2" x2="12" y2="12"></line>
+          </svg>
+          <span data-i18n="btnEnableWol">Enable Wake in OS</span>
+        </button>
+      </div>
+
+      <!-- Group 4: Developer Mode Toggle & Hidden Diagnostics -->
+      <div class="settings-group">
+        <div class="toggle-wrapper">
+          <div>
+            <div class="settings-group-title" data-i18n="sectionDeveloper">Developer Mode</div>
+            <p class="settings-section-desc" style="margin-bottom: 0; font-size: 12.5px;" data-i18n="sectionDeveloperDesc">
+              When enabled, reveals the live event stream drawer, technical node telemetry, and system update controls.
+            </p>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="devModeToggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- Revealed Developer Mode Container -->
+        <div class="dev-mode-container" id="devModeContainer">
+          
+          <!-- Node Diagnostics Telemetry -->
+          <div style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;" data-i18n="devNodeMetaTitle">Node Telemetry &amp; Architecture</div>
+            <div class="node-meta-grid">
+              <div class="node-meta-tile">
+                <div class="node-meta-title" data-i18n="devMetaNodeVersion">Node Version</div>
+                <div class="node-meta-value">v20+ Native</div>
+              </div>
+              <div class="node-meta-tile">
+                <div class="node-meta-title" data-i18n="devMetaPlatform">Platform OS</div>
+                <div class="node-meta-value">Localhost</div>
+              </div>
+              <div class="node-meta-tile">
+                <div class="node-meta-title" data-i18n="devMetaPort">Port</div>
+                <div class="node-meta-value">5050</div>
+              </div>
+              <div class="node-meta-tile">
+                <div class="node-meta-title" data-i18n="devMetaMemory">RAM Footprint</div>
+                <div class="node-meta-value">&lt; 50 MB</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live SSE Console Drawer -->
+          <div style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;" data-i18n="devConsoleTitle">Live Event Stream (SSE)</div>
+            <div class="dev-console-drawer">
+              <div class="dev-console-toolbar">
+                <div class="dev-console-filters">
+                  <button class="dev-filter-pill active" data-filter="ALL" type="button">ALL</button>
+                  <button class="dev-filter-pill" data-filter="INFO" type="button">INFO</button>
+                  <button class="dev-filter-pill" data-filter="COMMAND" type="button">COMMAND</button>
+                  <button class="dev-filter-pill" data-filter="ERROR" type="button">ERROR</button>
+                  <button class="dev-filter-pill" data-filter="SYSTEM" type="button">SYSTEM</button>
+                </div>
+                <div class="dev-console-actions">
+                  <button class="dev-console-btn" id="devClearLogsBtn" type="button" data-i18n="devClearLogs" style="font-size: 11px; padding: 2px 8px;">Clear Logs</button>
+                </div>
+              </div>
+              <div class="dev-console-logs" id="devConsoleLogs">
+                <!-- Populated dynamically via EventSource /api/logs -->
+              </div>
+            </div>
+          </div>
+
+          <!-- System Updates Controls -->
+          <div style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;" data-i18n="devUpdatesTitle">System Updates</div>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;" data-i18n="devUpdatesDesc">Check GitHub repository for updates and apply seamlessly.</p>
+            
+            <div class="updater-controls-row" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+              <div class="updater-info" style="display: flex; align-items: center; gap: 8px;">
+                <span class="updater-version-tag" id="updaterVersionTag" style="font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; border-radius: var(--radius-xs); background: var(--surface-hover);">v1.0.0</span>
+                <span class="updater-status-label" id="updateStatusLabel" data-i18n="upToDateMsg" style="font-size: 12.5px; color: var(--text-secondary);">Your system is up to date</span>
+              </div>
+              <div class="updater-btns" style="display: flex; gap: 8px;">
+                <button class="btn-secondary" id="btnCheckUpdates" type="button" style="padding: 6px 14px; font-size: 12px;">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                  <span data-i18n="btnCheckUpdates">Check for Updates</span>
+                </button>
+                <button class="btn-primary" id="btnApplyUpdate" type="button" style="display: none; padding: 6px 14px; font-size: 12px;">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  <span data-i18n="btnApplyUpdate">Install Update</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
   </div>
 
-  <div class="voice-box">
-    <input type="text" id="aiInput" placeholder="Command or ask Antigravity...">
-    <button class="mic-btn" onclick="toggleVoice()">🎙️</button>
+  <!-- =================================================================== -->
+  <!-- EDIT DEVICE MODAL DIALOG                                           -->
+  <!-- =================================================================== -->
+  <div class="modal-backdrop" id="deviceEditModal">
+    <div class="modal-box" role="dialog" aria-modal="true" style="max-width: 480px;">
+      <div>
+        <h2 class="modal-title" data-i18n="editDeviceTitle">Edit Device Details</h2>
+        <p class="modal-desc">Configure friendly overrides and WoL network parameters.</p>
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="form-group">
+          <label class="form-label" data-i18n="deviceNameLabel">Friendly Name</label>
+          <input type="text" class="modal-input" id="editDevName" placeholder="e.g. Studio PC">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="deviceTypeLabel">Device Type</label>
+          <select class="form-select" id="editDevType">
+            <option value="desktop" data-i18n="deviceTypeDesktop">Desktop PC</option>
+            <option value="laptop" data-i18n="deviceTypeLaptop">Laptop</option>
+            <option value="server" data-i18n="deviceTypeServer">Server</option>
+            <option value="phone" data-i18n="deviceTypePhone">Smartphone</option>
+            <option value="tablet" data-i18n="deviceTypeTablet">Tablet</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="deviceMacLabel">MAC Address (for WoL)</label>
+          <input type="text" class="modal-input" id="editDevMac" placeholder="AA:BB:CC:DD:EE:FF">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="deviceLanIpLabel">Local IP Address</label>
+          <input type="text" class="modal-input" id="editDevLanIp" placeholder="192.168.1.50">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="deviceTsIpLabel">Tailscale Mesh IP</label>
+          <input type="text" class="modal-input" id="editDevTsIp" placeholder="100.x.y.z">
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 8px;">
+        <button class="btn-secondary" id="btnEditDevCancel" type="button" data-i18n="modalCancel">Cancel</button>
+        <button class="btn-primary" id="btnEditDevSave" type="button" data-i18n="deviceSaveBtn">Save Changes</button>
+      </div>
+    </div>
   </div>
 
-  <div class="terminal" id="term">Connecting to AION mesh stream...\n</div>
+  <!-- =================================================================== -->
+  <!-- ACTION CONFIRMATION MODAL                                          -->
+  <!-- =================================================================== -->
+  <div class="modal-backdrop" id="actionConfirmModal">
+    <div class="modal-box" role="dialog" aria-modal="true" style="max-width: 420px;">
+      <div>
+        <h2 class="modal-title" id="confirmModalTitle">Confirm Action</h2>
+        <p class="modal-desc" id="confirmModalPrompt">Are you sure you want to perform this action?</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="confirmModalCancel" type="button" data-i18n="modalCancel">Cancel</button>
+        <button class="btn-primary" id="confirmModalOk" type="button" data-i18n="confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
 
+  <!-- =================================================================== -->
+  <!-- QUIT APP MODAL DIALOG                                              -->
+  <!-- =================================================================== -->
+  <div class="modal-backdrop" id="quitModal">
+    <div class="modal-box" role="dialog" aria-modal="true">
+      <div>
+        <h2 class="modal-title" data-i18n="modalQuitTitle">Quit Running Application</h2>
+        <p class="modal-desc" data-i18n="modalQuitDesc">Enter the name of the application you want to close (e.g., Notepad, Spotify, Chrome):</p>
+      </div>
+      <input 
+        type="text" 
+        class="modal-input" 
+        id="quitModalInput" 
+        data-i18n-placeholder="modalQuitPlaceholder" 
+        placeholder="Application name (e.g., Spotify)"
+      >
+      <div class="modal-actions">
+        <button class="btn-secondary" id="quitModalCancel" type="button" data-i18n="modalCancel">Cancel</button>
+        <button class="btn-primary" id="quitModalConfirm" type="button" data-i18n="modalConfirm">Close App</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Toast Notifications Container -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+  <!-- Modular ES6 Application Script -->
+  <script type="module" src="/js/app.js"></script>
+
+  <!-- PWA Offline Service Worker Registration -->
   <script>
-    const API = window.location.origin;
-
-    async function sendCmd(action, target = '') {
-      await fetch(`${API}/api/command`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, target })
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
       });
     }
-
-    function openRemote(target = '100.127.64.25') {
-      const isIp = target.includes('.');
-      const uri = `rustdesk://${target}`;
-      const term = document.getElementById('term');
-      if (term) {
-        term.textContent += `> [P2P]: Launching RustDesk ${isIp ? 'Tailscale' : 'ID'} session (${uri})...\n`;
-        if (isIp) {
-          term.textContent += `> [P2P]: Tip: Tap 'ID: 97842475' if Tailscale mesh is unreachable.\n`;
-        }
-        term.scrollTop = term.scrollHeight;
-      }
-      window.location.href = uri;
-    }
-
-    function killTarget() {
-      const target = prompt('Process name to kill (e.g. Valorant, node):');
-      if (target) sendCmd('kill_process', target);
-    }
-
-    const evtSource = new EventSource(`${API}/api/logs`);
-    const term = document.getElementById('term');
-    evtSource.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      term.textContent += data.log;
-      term.scrollTop = term.scrollHeight;
-    };
-
-    function toggleVoice() {
-      const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!Speech) return alert('Speech not available on this browser.');
-      const rec = new Speech();
-      rec.lang = 'en-US';
-      rec.onresult = (e) => {
-        const text = e.results[0][0].transcript;
-        document.getElementById('aiInput').value = text;
-        submitAI(text);
-      };
-      rec.start();
-    }
-
-    async function submitAI(prompt) {
-      term.textContent += `\n> [USER]: ${prompt}\n`;
-      const res = await fetch(`${API}/api/ai`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
-      });
-      const data = await res.json();
-      term.textContent += `> [AION-AGY]: ${data.response}\n`;
-      term.scrollTop = term.scrollHeight;
-    }
-
-    document.getElementById('aiInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        submitAI(e.target.value);
-        e.target.value = '';
-      }
-    });
   </script>
 </body>
 </html>
