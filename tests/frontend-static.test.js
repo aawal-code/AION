@@ -33,6 +33,7 @@ describe('Modular Frontend Architecture & Static Routing', () => {
     assert.ok(fs.existsSync('public/js/state.js'), 'public/js/state.js must exist');
     assert.ok(fs.existsSync('public/js/app.js'), 'public/js/app.js must exist');
     assert.ok(fs.existsSync('public/js/devices.js'), 'public/js/devices.js must exist');
+    assert.ok(fs.existsSync('public/js/media.js'), 'public/js/media.js must exist');
     assert.ok(fs.existsSync('public/js/icons.js'), 'public/js/icons.js must exist');
   });
 
@@ -71,7 +72,7 @@ describe('Modular Frontend Architecture & Static Routing', () => {
   });
 
   test('serves .js files with application/javascript content-type and no-cache header', async () => {
-    const files = ['/js/app.js', '/js/devices.js', '/js/state.js', '/js/i18n.js', '/js/icons.js'];
+    const files = ['/js/app.js', '/js/devices.js', '/js/media.js', '/js/state.js', '/js/i18n.js', '/js/icons.js'];
     for (const file of files) {
       const res = await fetch(`${baseUrl}${file}`);
       assert.equal(res.status, 200, `Failed loading ${file}`);
@@ -83,6 +84,7 @@ describe('Modular Frontend Architecture & Static Routing', () => {
   test('verifies Service Worker v3 and network-first configuration', () => {
     const sw = fs.readFileSync('public/sw.js', 'utf8');
     assert.ok(sw.includes('aion-shell-v3'), 'Service Worker must use aion-shell-v3 cache');
+    assert.ok(sw.includes('/js/media.js'), 'Service Worker must cache media.js in shell assets');
     assert.ok(sw.includes('fetch(event.request)'), 'Network-first fetch strategy');
     assert.ok(sw.includes('caches.delete'), 'Purges older caches on activate');
     assert.ok(sw.includes('self.skipWaiting()'), 'Calls self.skipWaiting() immediately in install');

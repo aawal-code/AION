@@ -26,3 +26,15 @@ lock.vbs
 Thumbs.db
 [Dd]esktop.ini
 .DS_Store
+
+# Build outputs & installers
+dist/
+build-cache/
+*.exe
+
+# Local instance configurations & pairing secrets
+data/trusted-devices.json
+data/vapid.json
+data/push-subscriptions.json
+data/screen-view.json
+data/device-identity.json

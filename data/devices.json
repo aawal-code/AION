@@ -6,7 +6,7 @@
       "type": "desktop",
       "mac": "AA:BB:CC:DD:EE:FF",
       "lanIp": "192.168.1.150",
-      "updatedAt": "2026-11-12T20:18:16.244Z"
+      "updatedAt": "2026-11-13T04:26:07.756Z"
     },
     "local": {
       "id": "local",
@@ -15,7 +15,16 @@
       "mac": "74:56:3C:2E:D6:BA",
       "lanIp": "169.254.83.107",
       "tailscaleIp": "100.127.64.25",
-      "updatedAt": "2026-11-12T20:26:33.869Z"
+      "updatedAt": "2026-11-13T04:26:10.603Z"
+    },
+    "ts-localhost": {
+      "id": "ts-localhost",
+      "name": "Abdulaziz's iPhone",
+      "type": "phone",
+      "mac": "",
+      "lanIp": "",
+      "tailscaleIp": "100.123.204.66",
+      "updatedAt": "2026-11-12T23:04:24.934Z"
     }
   }
 }

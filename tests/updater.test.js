@@ -5,7 +5,7 @@ import { compareVersions, getLocalVersion } from '../src/services/updater.js';
 describe('Updater Service Logic', () => {
   test('getLocalVersion returns valid semver string from package.json', () => {
     const version = getLocalVersion();
-    assert.match(version, /^\d+\.\d+\.\d+$/);
+    assert.match(version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
   });
 
   test('compareVersions accurately identifies newer, older, and identical versions', () => {

@@ -1,14 +1,38 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { handleSseConnection, logEvent } from '../services/sse.js';
-import { sanitizeCommand, InvalidCommandError } from '../utils/sanitizer.js';
+import { sanitizeCommand, sanitizeMediaAction, InvalidCommandError } from '../utils/sanitizer.js';
 import { executeWorkstationCommand } from '../services/os.js';
 import { executeAiPrompt } from '../services/ai-bridge.js';
-import { getSyncStatus, addFolder, pairDevice } from '../services/syncthing.js';
+import { handleLocalCommand } from '../services/command-router.js';
+import { getSyncStatus, addFolder, pairDevice as syncthingPairDevice } from '../services/syncthing.js';
 import { checkForUpdates, applyUpdate } from '../services/updater.js';
 import { getRunningProcesses } from '../services/os.js';
-import { getDevicesList, updateDevice, getDeviceById } from '../services/devices.js';
+import {
+  getDevicesList,
+  updateDevice,
+  getDeviceById,
+  enqueueDeviceCommand,
+  waitForDeviceCommands,
+  setDeviceTelemetry,
+  getDeviceTelemetry,
+} from '../services/devices.js';
 import { getWolStatus, enableWol, sendMagicPacket } from '../services/wol.js';
+import { getMediaStatus, controlMedia } from '../services/media.js';
+import {
+  isAuthenticated,
+  isLocalhost,
+  getPairingPin,
+  regeneratePairingPin,
+  pairDevice as pairAuthDevice,
+  getTrustedDevices,
+  revokeDevice,
+} from '../services/auth.js';
+import { getScreenViewStatus } from '../services/screen-view.js';
+import { getVapidPublicKey, saveSubscription, broadcastPush } from '../services/push.js';
+import { handleSystemRoutes } from './system.js';
+import { handleCommandsRoutes } from './commands.js';
 
 const PUBLIC_DIR = path.resolve('public');
 
@@ -27,6 +51,7 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2',
   '.woff': 'font/woff',
   '.ttf': 'font/ttf',
+  '.mobileconfig': 'application/x-apple-aspen-config; charset=utf-8',
 };
 
 function readJsonBody(req, maxSize = 1024 * 1024) {
@@ -68,12 +93,84 @@ function sendText(res, statusCode, text) {
 }
 
 /**
+ * Generates an Apple iOS Web Clip .mobileconfig XML profile
+ */
+function generateMobileConfig(host, theme = 'dark') {
+  const targetUrl = `http://${host}/`;
+  const uuid1 = crypto.randomUUID ? crypto.randomUUID() : 'A1090001-A109-A109-A109-A10900000001';
+  const uuid2 = crypto.randomUUID ? crypto.randomUUID() : 'A1090002-A109-A109-A109-A10900000002';
+
+  let iconBase64 = '';
+  const iconCandidates = [
+    path.resolve('public/brand/apple-touch-icon.png'),
+    path.resolve('public/apple-touch-icon.png'),
+  ];
+  for (const cand of iconCandidates) {
+    if (fs.existsSync(cand)) {
+      iconBase64 = fs.readFileSync(cand).toString('base64');
+      break;
+    }
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadDisplayName</key>
+  <string>AION (${theme === 'light' ? 'Light' : 'Dark'})</string>
+  <key>PayloadDescription</key>
+  <string>Installs AION full-screen web app.</string>
+  <key>PayloadIdentifier</key>
+  <string>com.aion.webclip.${theme}</string>
+  <key>PayloadOrganization</key>
+  <string>AION</string>
+  <key>PayloadRemovalDisallowed</key>
+  <false/>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>${uuid1}</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>FullScreen</key>
+      <true/>
+      ${iconBase64 ? `<key>Icon</key>\n      <data>${iconBase64}</data>` : ''}
+      <key>IsRemovable</key>
+      <true/>
+      <key>Label</key>
+      <string>AION</string>
+      <key>PayloadDescription</key>
+      <string>Configures AION full-screen Web Clip</string>
+      <key>PayloadDisplayName</key>
+      <string>AION</string>
+      <key>PayloadIdentifier</key>
+      <string>com.aion.webclip.clip.${theme}</string>
+      <key>PayloadType</key>
+      <string>com.apple.webClip.managed</string>
+      <key>PayloadUUID</key>
+      <string>${uuid2}</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>Precomposed</key>
+      <true/>
+      <key>URL</key>
+      <string>${targetUrl}?theme=${theme}</string>
+    </dict>
+  </array>
+</dict>
+</plist>`;
+}
+
+/**
  * Central HTTP request dispatcher matching routes cleanly
  */
 export async function handleRequest(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.writeHead(200).end();
@@ -82,12 +179,180 @@ export async function handleRequest(req, res) {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const urlPath = parsedUrl.pathname;
 
-  // 1. Live SSE Logs Stream
+  // 1. Live SSE Logs Stream (unauthenticated for localhost or authenticated for peers)
   if (urlPath === '/api/logs' && req.method === 'GET') {
+    if (!isAuthenticated(req)) {
+      return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
+    }
     return handleSseConnection(req, res);
   }
 
-  // 2. Hardware / OS Actions Dispatcher
+  // 2. Auth & Pairing Endpoints
+  if (urlPath.startsWith('/api/auth')) {
+    // GET /api/auth/status
+    if (urlPath === '/api/auth/status' && req.method === 'GET') {
+      const authed = isAuthenticated(req);
+      const local = isLocalhost(req);
+      return sendJson(res, 200, {
+        status: 'ok',
+        authenticated: authed,
+        isLocalhost: local,
+        pin: local ? getPairingPin() : undefined,
+      });
+    }
+
+    // POST /api/auth/pair (Verify PIN and issue token)
+    if (urlPath === '/api/auth/pair' && req.method === 'POST') {
+      try {
+        const body = await readJsonBody(req, 64 * 1024);
+        const clientIp = req.socket?.remoteAddress || '';
+        const userAgent = req.headers?.['user-agent'] || '';
+        const result = pairAuthDevice({
+          pin: body.pin,
+          deviceName: body.deviceName,
+          userAgent,
+          ip: clientIp,
+          remember: body.remember !== false,
+        });
+
+        if (!result.success) {
+          return sendJson(res, 401, { status: 'error', error: result.error });
+        }
+
+        // Set persistent cookie
+        res.setHeader(
+          'Set-Cookie',
+          `aion_token=${result.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`
+        );
+        return sendJson(res, 200, { status: 'ok', ...result });
+      } catch (err) {
+        logEvent('ERROR', `Pairing error: ${err.message}`);
+        return sendJson(res, 500, { status: 'error', error: err.message });
+      }
+    }
+
+    // GET /api/auth/devices (Requires auth or localhost)
+    if (urlPath === '/api/auth/devices' && req.method === 'GET') {
+      if (!isAuthenticated(req)) {
+        return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
+      }
+      const devices = getTrustedDevices();
+      return sendJson(res, 200, { status: 'ok', devices });
+    }
+
+    // DELETE /api/auth/devices/:id
+    const revokeMatch = urlPath.match(/^\/api\/auth\/devices\/([^/]+)$/);
+    if (revokeMatch && req.method === 'DELETE') {
+      if (!isAuthenticated(req)) {
+        return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
+      }
+      const id = decodeURIComponent(revokeMatch[1]);
+      const success = revokeDevice(id);
+      return sendJson(res, 200, { status: success ? 'ok' : 'error', success });
+    }
+
+    // POST /api/auth/pin/regenerate (Localhost or authenticated admin only)
+    if (urlPath === '/api/auth/pin/regenerate' && req.method === 'POST') {
+      if (!isAuthenticated(req)) {
+        return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
+      }
+      const newPin = regeneratePairingPin();
+      return sendJson(res, 200, { status: 'ok', pin: newPin });
+    }
+
+    return sendJson(res, 404, { status: 'error', error: 'Unknown auth endpoint' });
+  }
+
+  // 3. Apple iOS Web Clip Profile (.mobileconfig)
+  if (urlPath === '/api/ios/profile.mobileconfig' && req.method === 'GET') {
+    const theme = parsedUrl.searchParams.get('theme') || 'dark';
+    const host = req.headers.host || 'localhost:5050';
+    const xml = generateMobileConfig(host, theme);
+    res.writeHead(200, {
+      'Content-Type': 'application/x-apple-aspen-config; charset=utf-8',
+      'Content-Disposition': `attachment; filename="aion-${theme}.mobileconfig"`,
+    });
+    return res.end(xml);
+  }
+
+  // 4. Zero-Dependency VAPID Web Push Endpoints
+  if (urlPath.startsWith('/api/push')) {
+    // GET /api/push/vapid-public-key (Public)
+    if (urlPath === '/api/push/vapid-public-key' && req.method === 'GET') {
+      const publicKey = getVapidPublicKey();
+      return sendJson(res, 200, { status: 'ok', publicKey });
+    }
+
+    // POST /api/push/subscribe (Requires auth or localhost)
+    if (urlPath === '/api/push/subscribe' && req.method === 'POST') {
+      if (!isAuthenticated(req)) {
+        return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
+      }
+      try {
+        const body = await readJsonBody(req, 64 * 1024);
+        const userAgent = req.headers?.['user-agent'] || '';
+        const result = saveSubscription({
+          subscription: body.subscription,
+          deviceId: body.deviceId,
+          userAgent,
+        });
+        return sendJson(res, 200, { status: 'ok', ...result });
+      } catch (err) {
+        logEvent('ERROR', `Push subscription failed: ${err.message}`);
+        return sendJson(res, 500, { status: 'error', error: err.message });
+      }
+    }
+
+    // POST /api/push/send (Requires auth or localhost)
+    if (urlPath === '/api/push/send' && req.method === 'POST') {
+      if (!isAuthenticated(req)) {
+        return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
+      }
+      try {
+        const body = await readJsonBody(req, 64 * 1024);
+        const results = await broadcastPush(body);
+        return sendJson(res, 200, { status: 'ok', results });
+      } catch (err) {
+        logEvent('ERROR', `Push broadcast failed: ${err.message}`);
+        return sendJson(res, 500, { status: 'error', error: err.message });
+      }
+    }
+
+    return sendJson(res, 404, { status: 'error', error: 'Unknown push endpoint' });
+  }
+
+  // 5. Remote Screen View / RustDesk Integration
+  if (urlPath === '/api/system/screen-view' && req.method === 'GET') {
+    if (!isAuthenticated(req)) {
+      return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
+    }
+    try {
+      const screenView = getScreenViewStatus();
+      return sendJson(res, 200, { ...screenView, status: 'ok', screenStatus: screenView.status });
+    } catch (err) {
+      logEvent('ERROR', `Screen view status error: ${err.message}`);
+      return sendJson(res, 500, { status: 'error', error: err.message });
+    }
+  }
+
+  // --- STRICT AUTHENTICATION GUARD FOR REMAINING PROTECTED API ROUTES ---
+  if (urlPath.startsWith('/api/')) {
+    if (!isAuthenticated(req)) {
+      return sendJson(res, 401, {
+        status: 'error',
+        error: 'Authentication required. Please pair this device.',
+        paired: false,
+      });
+    }
+  }
+
+  // 6. Zero-AI Instant Multilingual Command Router (<10ms)
+  if (urlPath.startsWith('/api/commands')) {
+    const handled = await handleCommandsRoutes(req, res, urlPath);
+    if (handled !== false) return;
+  }
+
+  // 7. Hardware / OS Actions Dispatcher
   if (urlPath === '/api/command' && req.method === 'POST') {
     try {
       const body = await readJsonBody(req, 64 * 1024);
@@ -103,7 +368,7 @@ export async function handleRequest(req, res) {
     }
   }
 
-  // 3. Antigravity AI Bridge
+  // 7. Antigravity AI Bridge & Instant Local Command Router
   if (urlPath === '/api/ai' && req.method === 'POST') {
     try {
       const body = await readJsonBody(req, 1024 * 1024);
@@ -114,6 +379,19 @@ export async function handleRequest(req, res) {
           error: 'A non-empty "prompt" string is required',
         });
       }
+
+      // Instant deterministic local command routing (<50ms)
+      const localResult = await handleLocalCommand(prompt);
+      if (localResult.handled) {
+        return sendJson(res, 200, {
+          response: localResult.response,
+          error: null,
+          stderr: null,
+          local: true,
+        });
+      }
+
+      // Delegate to agy with generous timeout
       const result = await executeAiPrompt(prompt);
       return sendJson(res, 200, result);
     } catch (err) {
@@ -122,7 +400,7 @@ export async function handleRequest(req, res) {
     }
   }
 
-  // 4. Syncthing Peer Sync Management
+  // 8. Syncthing Peer Sync Management
   if (urlPath.startsWith('/api/sync')) {
     if (urlPath === '/api/sync/status' && req.method === 'GET') {
       try {
@@ -148,7 +426,7 @@ export async function handleRequest(req, res) {
     if (urlPath === '/api/sync/device' && req.method === 'POST') {
       try {
         const body = await readJsonBody(req, 256 * 1024);
-        const deviceData = await pairDevice(body);
+        const deviceData = await syncthingPairDevice(body);
         return sendJson(res, 200, deviceData);
       } catch (err) {
         logEvent('ERROR', `Pair device failed: ${err.message}`);
@@ -159,7 +437,7 @@ export async function handleRequest(req, res) {
     return sendJson(res, 404, { status: 'error', error: 'Unknown sync endpoint' });
   }
 
-  // 5. System Auto-Updater Endpoints
+  // 9. System Auto-Updater Endpoints
   if (urlPath.startsWith('/api/system/update')) {
     if (urlPath === '/api/system/update/check' && req.method === 'GET') {
       try {
@@ -184,7 +462,12 @@ export async function handleRequest(req, res) {
     return sendJson(res, 404, { status: 'error', error: 'Unknown update endpoint' });
   }
 
-  // 6. System Processes & Telemetry Endpoints
+  // 11. System Processes, Grouped Apps & On-Demand Telemetry Endpoints
+  if (urlPath === '/api/system/apps' || urlPath === '/api/system/apps/kill' || urlPath === '/api/system/telemetry') {
+    const handled = await handleSystemRoutes(req, res, urlPath);
+    if (handled !== false) return;
+  }
+
   if (urlPath === '/api/system/processes' && req.method === 'GET') {
     try {
       const processes = await getRunningProcesses();
@@ -195,7 +478,7 @@ export async function handleRequest(req, res) {
     }
   }
 
-  // 7. System Wake-on-LAN (WoL) Endpoints
+  // 11. System Wake-on-LAN (WoL) Endpoints
   if (urlPath.startsWith('/api/system/wol')) {
     if (urlPath === '/api/system/wol' && req.method === 'GET') {
       try {
@@ -220,8 +503,65 @@ export async function handleRequest(req, res) {
     return sendJson(res, 404, { status: 'error', error: 'Unknown WoL endpoint' });
   }
 
-  // 8. Smart Devices Registry & Wake Endpoints
+  // 12. Smart Devices Registry & Wake Endpoints
   if (urlPath.startsWith('/api/devices')) {
+    // Mobile Command: POST /api/devices/:id/command
+    const cmdMatch = urlPath.match(/^\/api\/devices\/([^/]+)\/command$/);
+    if (cmdMatch && req.method === 'POST') {
+      const deviceId = decodeURIComponent(cmdMatch[1]);
+      try {
+        const body = await readJsonBody(req, 64 * 1024);
+        if (!body.action || typeof body.action !== 'string') {
+          return sendJson(res, 400, { status: 'error', error: 'Action is required' });
+        }
+        const cmd = enqueueDeviceCommand(deviceId, body.action, body);
+        logEvent('COMMAND', `Enqueued mobile command '${body.action}' for device ${deviceId}`);
+        return sendJson(res, 200, { status: 'ok', command: cmd });
+      } catch (err) {
+        logEvent('ERROR', `Queue command for '${deviceId}' failed: ${err.message}`);
+        return sendJson(res, 500, { status: 'error', error: err.message });
+      }
+    }
+
+    // Mobile Event Stream / Long-poll: GET /api/devices/:id/events
+    const eventsMatch = urlPath.match(/^\/api\/devices\/([^/]+)\/events$/);
+    if (eventsMatch && req.method === 'GET') {
+      const deviceId = decodeURIComponent(eventsMatch[1]);
+      const waitParam = parsedUrl.searchParams.get('wait');
+      const timeoutMs = waitParam === 'false' ? 0 : Math.min(parseInt(parsedUrl.searchParams.get('timeout') || '15000', 10), 30000);
+      try {
+        const commands = await waitForDeviceCommands(deviceId, timeoutMs);
+        return sendJson(res, 200, { status: 'ok', commands });
+      } catch (err) {
+        logEvent('ERROR', `Events stream for '${deviceId}' error: ${err.message}`);
+        return sendJson(res, 500, { status: 'error', error: err.message });
+      }
+    }
+
+    // Mobile Telemetry: POST /api/devices/:id/telemetry & GET /api/devices/:id/telemetry
+    const telemetryMatch = urlPath.match(/^\/api\/devices\/([^/]+)\/telemetry$/);
+    if (telemetryMatch) {
+      const deviceId = decodeURIComponent(telemetryMatch[1]);
+      if (req.method === 'POST') {
+        try {
+          const body = await readJsonBody(req, 64 * 1024);
+          const telemetry = setDeviceTelemetry(deviceId, body);
+          return sendJson(res, 200, { status: 'ok', telemetry });
+        } catch (err) {
+          logEvent('ERROR', `Telemetry update for '${deviceId}' error: ${err.message}`);
+          return sendJson(res, 500, { status: 'error', error: err.message });
+        }
+      }
+      if (req.method === 'GET') {
+        try {
+          const telemetry = getDeviceTelemetry(deviceId);
+          return sendJson(res, 200, { status: 'ok', telemetry });
+        } catch (err) {
+          return sendJson(res, 500, { status: 'error', error: err.message });
+        }
+      }
+    }
+
     // Wake specific device: POST /api/devices/:id/wake
     const wakeMatch = urlPath.match(/^\/api\/devices\/([^/]+)\/wake$/);
     if (wakeMatch && req.method === 'POST') {
@@ -262,7 +602,8 @@ export async function handleRequest(req, res) {
     if (urlPath === '/api/devices' && req.method === 'GET') {
       try {
         const devices = await getDevicesList();
-        return sendJson(res, 200, { status: 'ok', devices });
+        const clientIp = req.socket?.remoteAddress || '';
+        return sendJson(res, 200, { status: 'ok', devices, clientIp });
       } catch (err) {
         logEvent('ERROR', `Devices list error: ${err.message}`);
         return sendJson(res, 500, { status: 'error', error: err.message });
@@ -272,7 +613,36 @@ export async function handleRequest(req, res) {
     return sendJson(res, 404, { status: 'error', error: 'Unknown devices endpoint' });
   }
 
-  // 9. Client PWA & Static Asset Serving (Offline-ready, secure path resolution)
+  // 13. Live Media & Audio Deck Endpoints
+  if (urlPath.startsWith('/api/media')) {
+    // GET /api/media/status
+    if (urlPath === '/api/media/status' && req.method === 'GET') {
+      try {
+        const mediaState = await getMediaStatus();
+        return sendJson(res, 200, { status: 'ok', ...mediaState });
+      } catch (err) {
+        logEvent('ERROR', `Media status query error: ${err.message}`);
+        return sendJson(res, 500, { status: 'error', error: err.message });
+      }
+    }
+
+    // POST /api/media/control
+    if (urlPath === '/api/media/control' && req.method === 'POST') {
+      try {
+        const body = await readJsonBody(req, 64 * 1024);
+        const { action, value } = sanitizeMediaAction(body.action, body.value);
+        const result = await controlMedia(action, value);
+        return sendJson(res, 200, { status: 'ok', ...result });
+      } catch (err) {
+        logEvent('ERROR', `Media control error: ${err.message}`);
+        return sendJson(res, err.statusCode || 400, { status: 'error', error: err.message });
+      }
+    }
+
+    return sendJson(res, 404, { status: 'error', error: 'Unknown media endpoint' });
+  }
+
+  // 14. Client PWA & Static Asset Serving (Offline-ready, secure path resolution)
   if (req.method === 'GET') {
     let cleanPath = parsedUrl.pathname;
     try {

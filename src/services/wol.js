@@ -139,13 +139,17 @@ export function getLocalAdapterFallback() {
 
 /**
  * Queries active network adapter MAC and OS WoL configuration state
+ * Inspects strictly physical Ethernet/Wi-Fi adapters (excluding virtual, tailscale, bluetooth)
+ * Checks:
+ * (a) Get-NetAdapterPowerManagement WakeOnMagicPacket == 'Enabled'
+ * (b) Get-NetAdapterAdvancedProperty '*WakeOnMagicPacket' enabled
+ * (c) Windows Fast Startup registry HiberbootEnabled == 0
  */
 export function getWolStatus() {
   return new Promise((resolve) => {
     const fallback = getLocalAdapterFallback();
 
     if (!IS_WIN) {
-      // Linux: query ethtool and /sys/class/net
       const iface = fallback.interface !== 'Unknown' ? fallback.interface : 'eth0';
       exec(`ethtool ${iface} 2>/dev/null`, (err, stdout) => {
         const out = stdout || '';
@@ -154,11 +158,13 @@ export function getWolStatus() {
 
         const supported = supportsMatch ? supportsMatch[1].includes('g') : true;
         const enabled = wakeMatch ? wakeMatch[1].includes('g') : false;
+        const state = enabled ? 'os_ready' : 'disabled';
 
         resolve({
           supported,
           enabled,
           fastStartupBlocking: false,
+          state,
           mac: fallback.mac,
           interface: iface,
         });
@@ -166,35 +172,77 @@ export function getWolStatus() {
       return;
     }
 
-    // Windows: Check Get-NetAdapter, Get-NetAdapterAdvancedProperty and HiberbootEnabled
     const psCmd = `
       $ErrorActionPreference = 'SilentlyContinue'
-      $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Virtual -eq $false } | Select-Object -First 1 Name, InterfaceDescription, MacAddress
+      $adapters = Get-NetAdapter | Where-Object {
+        $_.Virtual -eq $false -and
+        $_.Status -eq 'Up' -and
+        $_.InterfaceDescription -notmatch 'Tailscale|Loopback|Bluetooth|Virtual|Hyper-V|vEthernet|TAP|Npcap'
+      }
+      $adapter = $adapters | Select-Object -First 1
+      if (-not $adapter) {
+        $adapter = Get-NetAdapter | Where-Object {
+          $_.Virtual -eq $false -and
+          $_.InterfaceDescription -notmatch 'Tailscale|Loopback|Bluetooth|Virtual|Hyper-V|vEthernet|TAP|Npcap'
+        } | Select-Object -First 1
+      }
+
       $ifName = if ($adapter) { $adapter.Name } else { '' }
       $mac = if ($adapter) { $adapter.MacAddress } else { '' }
-      
-      $adv = if ($ifName) { Get-NetAdapterAdvancedProperty -Name $ifName | Where-Object { $_.DisplayName -match 'Wake on' -or $_.DisplayName -match 'WOL' } } else { @() }
-      $magicProp = $adv | Where-Object { $_.DisplayName -match 'Magic' } | Select-Object -First 1
-      $enabled = if ($magicProp) { $magicProp.DisplayValue -match 'Enabled' } else { $true }
-      
+
+      $pmEnabled = $false
+      if ($ifName) {
+        $pm = Get-NetAdapterPowerManagement -Name $ifName -ErrorAction SilentlyContinue
+        if ($pm -and $pm.WakeOnMagicPacket -match 'Enabled') {
+          $pmEnabled = $true
+        }
+      }
+
+      $advEnabled = $false
+      $supported = $false
+      if ($ifName) {
+        $adv = Get-NetAdapterAdvancedProperty -Name $ifName -ErrorAction SilentlyContinue
+        if ($adv) {
+          $supported = ($adv | Where-Object { $_.DisplayName -match 'Wake on' -or $_.RegistryKeyword -match 'Wake' }).Count -gt 0
+          $magic = $adv | Where-Object { $_.RegistryKeyword -match 'WakeOnMagicPacket' -or $_.DisplayName -match 'Magic' } | Select-Object -First 1
+          if ($magic) {
+            if ($magic.DisplayValue -match 'Enabled' -or $magic.RegistryValue -contains 1) {
+              $advEnabled = $true
+            }
+          }
+        }
+      }
+
+      $nicEnabled = ($pmEnabled -or $advEnabled)
       $hiber = (Get-ItemPropertyValue -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Name 'HiberbootEnabled' -ErrorAction SilentlyContinue)
-      $fastStartup = ($hiber -eq 1)
+      $fastStartupBlocking = ($hiber -eq 1)
+
+      $state = 'disabled'
+      if ($nicEnabled) {
+        if ($fastStartupBlocking) {
+          $state = 'fast_startup_blocked'
+        } else {
+          $state = 'os_ready'
+        }
+      }
 
       [PSCustomObject]@{
         interface = $ifName
         mac = $mac
-        supported = ($adv.Count -gt 0 -or $adapter -ne $null)
-        enabled = [bool]$enabled
-        fastStartupBlocking = [bool]$fastStartup
+        supported = [bool]($supported -or ($adapter -ne $null))
+        enabled = [bool]$nicEnabled
+        fastStartupBlocking = [bool]$fastStartupBlocking
+        state = $state
       } | ConvertTo-Json -Compress
     `.replace(/\r?\n\s*/g, ' ');
 
-    exec(`powershell -NoProfile -Command "${psCmd}"`, { timeout: 5000 }, (err, stdout) => {
+    exec(`powershell -NoProfile -Command "${psCmd}"`, { timeout: 6000 }, (err, stdout) => {
       if (err || !stdout) {
         return resolve({
           supported: true,
           enabled: true,
           fastStartupBlocking: false,
+          state: 'os_ready',
           mac: fallback.mac,
           interface: fallback.interface,
         });
@@ -206,6 +254,7 @@ export function getWolStatus() {
           supported: Boolean(data.supported),
           enabled: Boolean(data.enabled),
           fastStartupBlocking: Boolean(data.fastStartupBlocking),
+          state: data.state || (data.enabled ? 'os_ready' : 'disabled'),
           mac: (data.mac || fallback.mac || '').replace(/-/g, ':').toUpperCase(),
           interface: data.interface || fallback.interface,
         });
@@ -214,6 +263,7 @@ export function getWolStatus() {
           supported: true,
           enabled: true,
           fastStartupBlocking: false,
+          state: 'os_ready',
           mac: fallback.mac,
           interface: fallback.interface,
         });
@@ -223,7 +273,7 @@ export function getWolStatus() {
 }
 
 /**
- * Enables Wake-on-LAN on active network adapter
+ * 1-Click Fix: Enables Wake-on-LAN on physical network adapter and disables Windows Fast Startup
  */
 export function enableWol() {
   return new Promise((resolve) => {
@@ -242,21 +292,33 @@ export function enableWol() {
     }
 
     const psCmd = `
-      $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Virtual -eq $false } | Select-Object -First 1 Name
+      $ErrorActionPreference = 'SilentlyContinue'
+      $adapters = Get-NetAdapter | Where-Object {
+        $_.Virtual -eq $false -and
+        $_.InterfaceDescription -notmatch 'Tailscale|Loopback|Bluetooth|Virtual|Hyper-V|vEthernet|TAP|Npcap'
+      }
+      $adapter = $adapters | Select-Object -First 1
+
       if ($adapter) {
         Set-NetAdapterPowerManagement -Name $adapter.Name -WakeOnMagicPacket Enabled -ErrorAction SilentlyContinue
+        Set-NetAdapterAdvancedProperty -Name $adapter.Name -RegistryKeyword '*WakeOnMagicPacket' -RegistryValue '1' -ErrorAction SilentlyContinue
         Set-NetAdapterAdvancedProperty -Name $adapter.Name -DisplayName 'Wake on Magic Packet' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue
         Set-NetAdapterAdvancedProperty -Name $adapter.Name -DisplayName 'Shutdown Wake-On-Lan' -DisplayValue 'Enabled' -ErrorAction SilentlyContinue
+        Set-NetAdapterAdvancedProperty -Name $adapter.Name -RegistryKeyword 'S5WakeOnLan' -RegistryValue '1' -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Name 'HiberbootEnabled' -Value 0 -Type DWord -ErrorAction SilentlyContinue
       }
     `.replace(/\r?\n\s*/g, ' ');
 
-    exec(`powershell -NoProfile -Command "${psCmd}"`, { timeout: 6000 }, (err) => {
+    exec(`powershell -NoProfile -Command "${psCmd}"`, { timeout: 8000 }, (err) => {
       if (err) {
         logEvent('WARN', `Windows enable WoL error: ${err.message}`);
         return resolve({ success: false, message: `Failed configuring WoL: ${err.message}` });
       }
-      logEvent('COMMAND', 'Enabled WakeOnMagicPacket on active Windows adapter');
-      resolve({ success: true, message: 'Wake-on-LAN (Wake on Magic Packet) enabled on network adapter' });
+      logEvent('COMMAND', 'Enabled WakeOnMagicPacket and disabled Fast Startup on Windows');
+      resolve({
+        success: true,
+        message: 'Wake-on-LAN enabled on adapter and Windows Fast Startup disabled',
+      });
     });
   });
 }

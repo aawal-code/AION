@@ -195,8 +195,8 @@ export async function applyUpdate() {
       const stagedJson = JSON.parse(fs.readFileSync(stagedPkg, 'utf8'));
       logEvent('UPDATE', `Staged package verified: v${stagedJson.version || '1.0.0'}`);
 
-      // Atomically copy staged files over project (preserving .env and git)
-      copyDirectoryRecursive(stagingDir, process.cwd(), ['.git', '.env', '.aion-staging']);
+      // Atomically copy staged files over project (preserving data, install-manifest, .env, and git)
+      copyDirectoryRecursive(stagingDir, process.cwd(), ['.git', '.env', '.aion-staging', 'install-manifest.json']);
       logEvent('UPDATE', 'Staged files swapped successfully into live tree.');
     }
 
@@ -234,7 +234,7 @@ export async function applyUpdate() {
 }
 
 /**
- * Recursive directory copy helper excluding protected paths
+ * Recursive directory copy helper excluding protected paths and preserving existing user data files
  */
 function copyDirectoryRecursive(src, dest, exclude = []) {
   const entries = fs.readdirSync(src, { withFileTypes: true });
@@ -249,6 +249,13 @@ function copyDirectoryRecursive(src, dest, exclude = []) {
       }
       copyDirectoryRecursive(srcPath, destPath, exclude);
     } else {
+      // Never overwrite existing user data configuration files or install manifest
+      const isUserData =
+        destPath.includes(`${path.sep}data${path.sep}`) ||
+        path.basename(destPath) === 'install-manifest.json';
+      if (isUserData && fs.existsSync(destPath)) {
+        continue;
+      }
       fs.copyFileSync(srcPath, destPath);
     }
   }

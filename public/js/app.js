@@ -34,6 +34,7 @@ import {
 
 import { getSvgIcon } from './icons.js';
 import { initDevicesModule, fetchRunningProcesses, renderDevicesView, selectDevice } from './devices.js';
+import { initMediaModule } from './media.js';
 
 // ==========================================================================
 // Service Worker Live Controller Reload (Mobile / Desktop PWA Auto-Refresh)
@@ -76,6 +77,8 @@ function setupSettingsModal() {
 
   function openSettings() {
     modal?.classList.add('active');
+    checkAuthStatus();
+    fetchTrustedDevices();
   }
 
   function closeSettings() {
@@ -785,12 +788,443 @@ function setupUpdateControls() {
 }
 
 // ==========================================================================
+// Mobile Client Push & Real-Time Telemetry Companion Channel
+// ==========================================================================
+
+let activeWakeLockSentinel = null;
+let pingAudioInterval = null;
+
+export function playPhonePingChime() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const now = ctx.currentTime;
+    // Tone 1 (A5 -> A6)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(880, now);
+    osc1.frequency.exponentialRampToValueAtTime(1760, now + 0.16);
+    gain1.gain.setValueAtTime(0.7, now);
+    gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.22);
+
+    // Tone 2 (E6 -> E7)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(1320, now + 0.25);
+    osc2.frequency.exponentialRampToValueAtTime(2640, now + 0.48);
+    gain2.gain.setValueAtTime(0.8, now + 0.25);
+    gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.58);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.25);
+    osc2.stop(now + 0.58);
+  } catch (err) {
+    console.debug('[AION Audio Chime] Silent error:', err);
+  }
+}
+
+export function triggerPhonePingAlert() {
+  // 1. Play first chime immediately
+  playPhonePingChime();
+
+  // 2. Play repeating chime every 1.6s
+  if (pingAudioInterval) clearInterval(pingAudioInterval);
+  pingAudioInterval = setInterval(() => {
+    playPhonePingChime();
+  }, 1600);
+
+  // 3. Vibrate device (pulse pattern)
+  if ('vibrate' in navigator) {
+    try {
+      navigator.vibrate([400, 150, 400, 150, 600]);
+    } catch {}
+  }
+
+  // 4. Show pulsing visual alert overlay
+  const overlay = document.getElementById('mobilePingOverlay');
+  if (overlay) {
+    overlay.style.display = 'flex';
+  }
+}
+
+export function silencePhonePingAlert() {
+  if (pingAudioInterval) {
+    clearInterval(pingAudioInterval);
+    pingAudioInterval = null;
+  }
+  if ('vibrate' in navigator) {
+    try {
+      navigator.vibrate(0);
+    } catch {}
+  }
+  const overlay = document.getElementById('mobilePingOverlay');
+  if (overlay) {
+    overlay.style.display = 'none';
+  }
+}
+
+async function requestScreenWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      activeWakeLockSentinel = await navigator.wakeLock.request('screen');
+      activeWakeLockSentinel.addEventListener('release', () => {
+        activeWakeLockSentinel = null;
+      });
+      return true;
+    } catch (err) {
+      console.debug('[AION WakeLock] Error:', err.message);
+      return false;
+    }
+  }
+  return false;
+}
+
+function releaseScreenWakeLock() {
+  if (activeWakeLockSentinel) {
+    activeWakeLockSentinel.release().catch(() => {});
+    activeWakeLockSentinel = null;
+  }
+}
+
+export async function setupMobileCompanionChannel() {
+  const overlay = document.getElementById('mobilePingOverlay');
+  const btnDismiss = document.getElementById('btnDismissMobilePing');
+
+  overlay?.addEventListener('click', silencePhonePingAlert);
+  btnDismiss?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    silencePhonePingAlert();
+  });
+
+  // Determine client self device id
+  let selfDeviceId = localStorage.getItem('aion_self_device_id') || '';
+
+  async function resolveSelfDevice() {
+    try {
+      const res = await fetch('/api/devices');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.devices || !Array.isArray(data.devices)) return;
+
+      const clientIp = data.clientIp || '';
+      // 1. Try IP match
+      let match = data.devices.find((d) => d.tailscaleIp && clientIp.includes(d.tailscaleIp)) ||
+                  data.devices.find((d) => d.lanIp && clientIp.includes(d.lanIp));
+
+      // 2. If mobile user agent and not matched, find phone device
+      const isMobileAgent = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (!match && isMobileAgent) {
+        match = data.devices.find((d) => ['phone', 'mobile', 'tablet'].includes(d.type?.toLowerCase())) ||
+                data.devices.find((d) => ['ios', 'android'].includes(d.os?.toLowerCase()));
+      }
+
+      if (match) {
+        selfDeviceId = match.id;
+        localStorage.setItem('aion_self_device_id', selfDeviceId);
+      }
+    } catch (err) {
+      console.debug('[AION Self-Device] Discovery error:', err);
+    }
+  }
+
+  await resolveSelfDevice();
+
+  // Send periodic telemetry (Battery, Charging, Wake Lock, Route)
+  async function reportTelemetry() {
+    if (!selfDeviceId) return;
+    try {
+      let battery = null;
+      let charging = null;
+
+      if ('getBattery' in navigator) {
+        try {
+          const b = await navigator.getBattery();
+          battery = Math.round(b.level * 100);
+          charging = Boolean(b.charging);
+        } catch {}
+      }
+
+      const isMesh = window.location.hostname.startsWith('100.');
+      const route = isMesh ? 'mesh' : 'lan';
+      const wakeLock = Boolean(activeWakeLockSentinel);
+
+      await fetch(`/api/devices/${encodeURIComponent(selfDeviceId)}/telemetry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ battery, charging, wakeLock, route }),
+      });
+    } catch (err) {
+      console.debug('[AION Telemetry] Report error:', err.message);
+    }
+  }
+
+  // Start telemetry loop (immediate + every 15s)
+  reportTelemetry();
+  setInterval(reportTelemetry, 15000);
+
+  // If battery changes, report immediately
+  if ('getBattery' in navigator) {
+    try {
+      navigator.getBattery().then((b) => {
+        b.addEventListener('levelchange', reportTelemetry);
+        b.addEventListener('chargingchange', reportTelemetry);
+      }).catch(() => {});
+    } catch {}
+  }
+
+  // Long-poll event listener for commands sent to this device
+  let isPolling = false;
+  async function pollCommands() {
+    if (!selfDeviceId || isPolling) return;
+    isPolling = true;
+
+    try {
+      const res = await fetch(`/api/devices/${encodeURIComponent(selfDeviceId)}/events?wait=true&timeout=15000`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'ok' && Array.isArray(data.commands) && data.commands.length > 0) {
+          for (const cmd of data.commands) {
+            handleReceivedCommand(cmd);
+          }
+        }
+      }
+    } catch (err) {
+      await new Promise((r) => setTimeout(r, 2500));
+    } finally {
+      isPolling = false;
+      setTimeout(pollCommands, 300);
+    }
+  }
+
+  async function handleReceivedCommand(cmd) {
+    if (!cmd || !cmd.action) return;
+
+    if (cmd.action === 'ping') {
+      triggerPhonePingAlert();
+    } else if (cmd.action === 'open_url') {
+      const url = cmd.payload?.url || cmd.url;
+      if (url) {
+        showToast(`Opening: ${url}`, 'link');
+        try {
+          window.open(url, '_blank');
+        } catch {
+          window.location.href = url;
+        }
+      }
+    } else if (cmd.action === 'clipboard') {
+      const text = cmd.payload?.text || cmd.text;
+      if (text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast(t('clipboardReceived') || 'Copied to clipboard from computer', 'clipboard');
+        } catch {
+          showToast(`Clipboard: ${text.slice(0, 32)}`, 'clipboard');
+        }
+      }
+    } else if (cmd.action === 'wake_lock') {
+      const enable = Boolean(cmd.payload?.enabled ?? cmd.enabled);
+      if (enable) {
+        await requestScreenWakeLock();
+      } else {
+        releaseScreenWakeLock();
+      }
+      reportTelemetry();
+    }
+  }
+
+  // Start polling loop
+  pollCommands();
+}
+
+// ==========================================================================
+// Authentication, Remote Pairing & Trusted Devices
+// ==========================================================================
+
+async function checkAuthStatus() {
+  try {
+    const token = localStorage.getItem('aion_token');
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/auth/status', { headers });
+    const data = await res.json();
+
+    const pairingModal = document.getElementById('pairingModal');
+    if (!data.authenticated) {
+      if (pairingModal) pairingModal.style.display = 'flex';
+      setupPairingModal();
+    } else {
+      if (pairingModal) pairingModal.style.display = 'none';
+      if (data.pin) {
+        updateSettingsPairing(data.pin);
+      }
+    }
+  } catch (err) {
+    console.warn('Auth status check error:', err);
+  }
+}
+
+function setupPairingModal() {
+  const btnSubmit = document.getElementById('btnSubmitPairing');
+  const pinInput = document.getElementById('pairPinInput');
+  const nameInput = document.getElementById('pairDeviceNameInput');
+  const rememberChk = document.getElementById('pairRememberDevice');
+  const errorMsg = document.getElementById('pairErrorMsg');
+
+  if (nameInput && !nameInput.value) {
+    const isIOS = /iPhone|iPad/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    nameInput.value = isIOS ? 'iPhone Companion' : isAndroid ? 'Android Companion' : 'Mobile Companion';
+  }
+
+  btnSubmit?.addEventListener('click', async () => {
+    const pin = pinInput?.value?.trim();
+    if (!pin || pin.length !== 4) {
+      if (errorMsg) {
+        errorMsg.textContent = 'Please enter a valid 4-digit PIN';
+        errorMsg.style.display = 'block';
+      }
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/auth/pair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin,
+          deviceName: nameInput?.value?.trim() || 'Mobile Companion',
+          remember: rememberChk?.checked !== false,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.status !== 'ok') {
+        if (errorMsg) {
+          errorMsg.textContent = data.error || 'Invalid Pairing PIN';
+          errorMsg.style.display = 'block';
+        }
+        return;
+      }
+
+      if (data.token) {
+        localStorage.setItem('aion_token', data.token);
+      }
+
+      const modal = document.getElementById('pairingModal');
+      if (modal) modal.style.display = 'none';
+      showToast('Device paired successfully!', 'check');
+      location.reload();
+    } catch (err) {
+      if (errorMsg) {
+        errorMsg.textContent = `Pairing failed: ${err.message}`;
+        errorMsg.style.display = 'block';
+      }
+    }
+  });
+}
+
+async function updateSettingsPairing(pin) {
+  const pinEl = document.getElementById('settingsPairingPin');
+  if (pinEl && pin) {
+    pinEl.textContent = pin;
+  }
+  await fetchTrustedDevices();
+}
+
+async function fetchTrustedDevices() {
+  const listEl = document.getElementById('trustedDevicesList');
+  if (!listEl) return;
+
+  try {
+    const token = localStorage.getItem('aion_token');
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/auth/devices', { headers });
+    const data = await res.json();
+    if (data.status === 'ok' && Array.isArray(data.devices)) {
+      if (data.devices.length === 0) {
+        listEl.innerHTML = `<div style="font-size: 12px; color: var(--text-tertiary);">${t('trustedDevicesEmpty')}</div>`;
+        return;
+      }
+
+      listEl.innerHTML = data.devices
+        .map(
+          (d) => `
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);">
+          <div>
+            <div style="font-size: 12.5px; font-weight: 600;">${d.name}</div>
+            <div style="font-size: 11px; color: var(--text-tertiary);">${d.ip} &bull; ${new Date(d.lastUsedAt).toLocaleDateString()}</div>
+          </div>
+          <button class="btn-secondary" data-revoke-id="${d.id}" style="padding: 4px 8px; font-size: 11px; color: #ef4444;" type="button">
+            ${t('btnRevokeDevice')}
+          </button>
+        </div>
+      `
+        )
+        .join('');
+
+      listEl.querySelectorAll('[data-revoke-id]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-revoke-id');
+          if (id) {
+            await fetch(`/api/auth/devices/${encodeURIComponent(id)}`, {
+              method: 'DELETE',
+              headers,
+            });
+            fetchTrustedDevices();
+            showToast('Device revoked', 'check');
+          }
+        });
+      });
+    }
+  } catch (err) {
+    console.warn('Failed loading trusted devices:', err);
+  }
+}
+
+function setupPairingSettingsControls() {
+  const btnRegen = document.getElementById('btnRegeneratePin');
+  btnRegen?.addEventListener('click', async () => {
+    try {
+      const token = localStorage.getItem('aion_token');
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/auth/pin/regenerate', { method: 'POST', headers });
+      const data = await res.json();
+      if (data.status === 'ok' && data.pin) {
+        const pinEl = document.getElementById('settingsPairingPin');
+        if (pinEl) pinEl.textContent = data.pin;
+        showToast('Pairing PIN regenerated', 'check');
+      }
+    } catch (err) {
+      showToast(`Regeneration failed: ${err.message}`, 'alert');
+    }
+  });
+}
+
+// ==========================================================================
 // App Master Initialization
 // ==========================================================================
 document.addEventListener('DOMContentLoaded', () => {
   // 1. Language & State
   initLanguage();
   initState();
+
+  // Check Auth & Setup Pairing
+  checkAuthStatus();
+  setupPairingSettingsControls();
 
   // 2. Navigation & Settings Modal
   setupNavigation();
@@ -818,10 +1252,16 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchRunningProcesses();
   });
 
-  // 7. Syncthing Peer Status
+  // 7. Live Media & Audio Deck (Phase 3)
+  initMediaModule();
+
+  // 8. Syncthing Peer Status
   fetchSyncStatus();
 
-  // 8. Re-render devices on language change
+  // 9. Mobile Companion Channel (Push & Telemetry)
+  setupMobileCompanionChannel();
+
+  // 10. Re-render devices on language change
   window.addEventListener('aion:languagechange', () => {
     renderDevicesView();
   });

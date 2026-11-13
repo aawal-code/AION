@@ -10,8 +10,12 @@
   <title>AION</title>
 
   <link rel="manifest" href="/manifest.json">
-  <link rel="icon" type="image/svg+xml" href="/icon.svg">
-  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="icon" type="image/svg+xml" href="/brand/logo-dark-ico.svg" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/svg+xml" href="/brand/logo-light-ico.svg" media="(prefers-color-scheme: light)">
+  <link rel="icon" type="image/png" sizes="32x32" href="/brand/icon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/brand/icon-16.png">
+  <link rel="shortcut icon" href="/brand/aion.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon.png">
 
   <!-- Apple Typography: Manrope for EN/DE & Cairo for Arabic, with clean local system fallbacks -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,14 +39,12 @@
       <!-- Sidebar Top Header -->
       <header class="sidebar-header">
         <div class="brand">
-          <div class="brand-icon-box">
-            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-              <polyline points="2 17 12 22 22 17"></polyline>
-              <polyline points="2 12 12 17 22 12"></polyline>
-            </svg>
+          <div class="brand-logo-group">
+            <img src="/brand/icon-light.svg" class="brand-mark brand-mark-light" alt="AION">
+            <img src="/brand/icon-dark.svg" class="brand-mark brand-mark-dark" alt="AION">
+            <img src="/brand/wordmark-light.svg" class="brand-wordmark brand-wordmark-light" alt="AION">
+            <img src="/brand/wordmark-dark.svg" class="brand-wordmark brand-wordmark-dark" alt="AION">
           </div>
-          <span class="brand-name" data-i18n="brandTitle">AION</span>
         </div>
         <button class="icon-btn" id="btnOpenSettings" type="button" data-i18n-title="navSettings" title="Settings">
           <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -111,7 +113,12 @@
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
         </button>
-        <span class="mobile-top-title" id="mobileTopTitle">AION</span>
+        <div class="brand-logo-group mobile-top-logo" id="mobileTopTitle">
+          <img src="/brand/icon-light.svg" class="brand-mark brand-mark-light" alt="AION">
+          <img src="/brand/icon-dark.svg" class="brand-mark brand-mark-dark" alt="AION">
+          <img src="/brand/wordmark-light.svg" class="brand-wordmark brand-wordmark-light" alt="AION">
+          <img src="/brand/wordmark-dark.svg" class="brand-wordmark brand-wordmark-dark" alt="AION">
+        </div>
         <button class="icon-btn" id="btnMobileSettings" type="button" aria-label="Settings">
           <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -147,6 +154,14 @@
                 <span class="status-dot"></span>
                 <span id="canvasDeviceStatusText" data-i18n="statusConnected">Connected</span>
               </span>
+              <button class="btn-secondary" id="btnCanvasViewScreen" type="button" style="display: none; padding: 6px 14px; font-size: 12px;">
+                <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                  <line x1="8" y1="21" x2="16" y2="21"></line>
+                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+                <span data-i18n="btnViewScreen">View Screen</span>
+              </button>
               <button class="btn-primary" id="btnCanvasWake" type="button" style="display: none; padding: 6px 14px; font-size: 12px;">
                 <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
@@ -158,7 +173,7 @@
           </div>
 
           <!-- Section 1: Power & Display (4 Equal-Width Tactile Tiles) -->
-          <section class="canvas-section">
+          <section class="canvas-section" id="desktopPowerSection">
             <div class="section-heading" data-i18n="sectionPowerDisplay">Power &amp; Display</div>
             <div class="power-display-grid">
               <!-- Tile 1: Lock -->
@@ -208,8 +223,106 @@
             </div>
           </section>
 
-          <!-- Section 2: Running Apps (Clean Borderless Rows) -->
-          <section class="canvas-section">
+          <!-- Section 2: Now Playing & Audio Deck -->
+          <section class="canvas-section media-deck-section" id="mediaDeckSection">
+            <div class="section-heading" data-i18n="sectionMediaAudio">Now Playing &amp; Audio</div>
+            <div class="glass-card media-deck-card">
+              <!-- Top Row: Track Meta & Playback Controls -->
+              <div class="media-main-row">
+                <div class="media-info-block">
+                  <div class="media-artwork-box" id="mediaArtworkBox">
+                    <img id="mediaArtworkImg" class="media-artwork-img" alt="Album Cover" style="display: none;">
+                    <svg class="icon icon-sm media-artwork-fallback" id="mediaArtworkFallback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M9 18V5l12-2v13"></path>
+                      <circle cx="6" cy="18" r="3"></circle>
+                      <circle cx="18" cy="16" r="3"></circle>
+                    </svg>
+                  </div>
+                  <div class="media-meta">
+                    <div class="media-title" id="mediaTrackTitle" data-i18n="mediaIdleTitle">Nothing Playing</div>
+                    <div class="media-subtitle">
+                      <span id="mediaTrackArtist" data-i18n="mediaIdleDesc">No active media session detected</span>
+                      <span class="media-source-pill" id="mediaSourceApp" style="display: none;">Player</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Playback Buttons -->
+                <div class="media-controls-group">
+                  <button class="media-btn" id="btnMediaPrev" type="button" data-i18n-title="mediaPrev" title="Previous Track">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="19 20 9 12 19 4 19 20"></polygon>
+                      <line x1="5" y1="19" x2="5" y2="5"></line>
+                    </svg>
+                  </button>
+
+                  <button class="media-btn media-btn-primary" id="btnMediaPlayPause" type="button" data-i18n-title="mediaPlay" title="Play">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                  </button>
+
+                  <button class="media-btn" id="btnMediaNext" type="button" data-i18n-title="mediaNext" title="Next Track">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                      <line x1="19" y1="5" x2="19" y2="19"></line>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Bottom Row: Smooth Master Volume Slider & Audio Pill Toggles -->
+              <div class="audio-controls-row">
+                <div class="volume-slider-group">
+                  <span id="mediaVolumeIconBox" style="color: var(--text-secondary); display: flex;">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                    </svg>
+                  </span>
+                  <div class="volume-slider-wrapper">
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="100" 
+                      value="50" 
+                      class="apple-slider" 
+                      id="mediaVolumeSlider" 
+                      aria-label="Master Volume"
+                    >
+                  </div>
+                  <span class="volume-label" id="mediaVolumeLabel">50%</span>
+                </div>
+
+                <div class="audio-toggle-pills">
+                  <!-- Mute Pill Button -->
+                  <button class="audio-pill" id="btnMediaMute" type="button">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                      <line x1="23" y1="9" x2="17" y2="15"></line>
+                      <line x1="17" y1="9" x2="23" y2="15"></line>
+                    </svg>
+                    <span id="mediaMuteLabel" data-i18n="mediaMute">Mute</span>
+                  </button>
+
+                  <!-- Deafen Pill Button (Discord style: mutes output + input) -->
+                  <button class="audio-pill audio-pill-danger" id="btnMediaDeafen" type="button">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+                      <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path>
+                      <line x1="2" y1="2" x2="22" y2="22"></line>
+                    </svg>
+                    <span id="mediaDeafenLabel" data-i18n="mediaDeafen">Deafen</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- Section 3: Running Apps (Clean Borderless Rows) -->
+          <section class="canvas-section" id="desktopAppsSection">
             <div class="section-heading-row">
               <div class="section-heading" data-i18n="runningAppsTitle">Running Applications</div>
               <button class="btn-subtle" id="btnToggleAllProcesses" type="button" style="display: none;">Show all</button>
@@ -218,6 +331,328 @@
               <!-- Populated dynamically by devices.js -->
             </div>
           </section>
+
+          <!-- Dedicated Mobile Companion Deck (Rendered only for Phone / Tablet nodes) -->
+          <div id="mobileCompanionDeck" style="display: none;">
+            
+            <!-- Mobile Telemetry Card -->
+            <section class="canvas-section">
+              <div class="section-heading-row">
+                <div class="section-heading" data-i18n="mobileTelemetryTitle">Phone Telemetry</div>
+                <button class="btn-subtle" id="btnRefreshMobileTelemetry" type="button" title="Refresh Telemetry">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                </button>
+              </div>
+              
+              <div class="glass-card mobile-telemetry-card">
+                <div class="mobile-telemetry-grid">
+                  <!-- Item 1: Battery -->
+                  <div class="mobile-telem-item">
+                    <div class="mobile-telem-icon-box battery-icon-box">
+                      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="1" y="6" width="18" height="12" rx="2" ry="2"></rect>
+                        <line x1="23" y1="11" x2="23" y2="13"></line>
+                        <line x1="5" y1="10" x2="5" y2="14" id="mobileBatteryBar1"></line>
+                        <line x1="9" y1="10" x2="9" y2="14" id="mobileBatteryBar2"></line>
+                        <line x1="13" y1="10" x2="13" y2="14" id="mobileBatteryBar3"></line>
+                      </svg>
+                    </div>
+                    <div class="mobile-telem-data">
+                      <div class="mobile-telem-label" data-i18n="mobileBattery">Battery</div>
+                      <div class="mobile-telem-main-val">
+                        <span id="mobileBatteryLevel">--%</span>
+                        <span class="mobile-pill-badge" id="mobileBatteryBadge" data-i18n="mobileDischarging">On Battery</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Item 2: Route -->
+                  <div class="mobile-telem-item">
+                    <div class="mobile-telem-icon-box route-icon-box">
+                      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                        <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                        <line x1="12" y1="20" x2="12.01" y2="20"></line>
+                      </svg>
+                    </div>
+                    <div class="mobile-telem-data">
+                      <div class="mobile-telem-label" data-i18n="mobileRoute">Connection Route</div>
+                      <div class="mobile-telem-main-val" id="mobileRouteValue">Tailscale Mesh</div>
+                    </div>
+                  </div>
+
+                  <!-- Item 3: Screen Wake Lock -->
+                  <div class="mobile-telem-item">
+                    <div class="mobile-telem-icon-box wake-icon-box">
+                      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                      </svg>
+                    </div>
+                    <div class="mobile-telem-data">
+                      <div class="mobile-telem-label" data-i18n="mobileScreenWake">Screen Awake</div>
+                      <div class="mobile-telem-main-val" id="mobileWakeState" data-i18n="mobileWakeNormal">Normal Timeout</div>
+                    </div>
+                  </div>
+
+                  <!-- Item 4: Last Seen -->
+                  <div class="mobile-telem-item">
+                    <div class="mobile-telem-icon-box seen-icon-box">
+                      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                      </svg>
+                    </div>
+                    <div class="mobile-telem-data">
+                      <div class="mobile-telem-label" data-i18n="mobileLastSeen">Last Seen</div>
+                      <div class="mobile-telem-main-val" id="mobileLastSeen">Active now</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Quick Phone Actions -->
+            <section class="canvas-section">
+              <div class="section-heading" data-i18n="mobileActionsTitle">Quick Phone Actions</div>
+              
+              <div class="mobile-actions-stack">
+                <!-- Action Row 1: Ping / Find Phone & Keep Screen Awake Tile -->
+                <div class="mobile-action-tiles-grid">
+                  <!-- Ping / Find Phone Button -->
+                  <button class="mobile-action-tile" id="btnPingPhone" type="button">
+                    <div class="mobile-action-icon-circle ping-icon-circle">
+                      <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                      </svg>
+                    </div>
+                    <div class="mobile-action-tile-text">
+                      <span class="mobile-action-tile-title" data-i18n="btnPingPhone">Find / Ping Phone</span>
+                      <span class="mobile-action-tile-desc" data-i18n="pingPhoneDesc">Play loud chime &amp; vibrate phone</span>
+                    </div>
+                  </button>
+
+                  <!-- Keep Screen Awake Switch Card -->
+                  <div class="mobile-action-tile mobile-switch-tile">
+                    <div class="mobile-action-icon-circle wake-icon-circle">
+                      <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                      </svg>
+                    </div>
+                    <div class="mobile-action-tile-text" style="flex: 1;">
+                      <span class="mobile-action-tile-title" data-i18n="toggleKeepAwake">Keep Screen Awake</span>
+                      <span class="mobile-action-tile-desc">Prevent screen timeout</span>
+                    </div>
+                    <label class="apple-switch" for="toggleMobileWakeLock">
+                      <input type="checkbox" id="toggleMobileWakeLock">
+                      <span class="apple-switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Action Row 2: Open URL on Phone Form -->
+                <div class="glass-card mobile-input-card">
+                  <div class="mobile-input-header">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                    </svg>
+                    <span data-i18n="phoneUrlLabel">Open URL on Phone</span>
+                  </div>
+                  <form class="mobile-input-row" id="formPhoneUrl" autocomplete="off">
+                    <input type="url" class="apple-input mobile-form-input" id="phoneUrlInput" placeholder="https://example.com..." data-i18n-placeholder="phoneUrlPlaceholder" required>
+                    <button class="btn-primary mobile-form-btn" type="submit" id="btnSendPhoneUrl">
+                      <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                      </svg>
+                      <span data-i18n="btnOpenOnPhone">Open on Phone</span>
+                    </button>
+                  </form>
+                </div>
+
+                <!-- Action Row 3: Push Clipboard to Phone Form -->
+                <div class="glass-card mobile-input-card">
+                  <div class="mobile-input-header">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                      <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                    </svg>
+                    <span data-i18n="phoneClipLabel">Push Clipboard to Phone</span>
+                  </div>
+                  <form class="mobile-input-row" id="formPhoneClip" autocomplete="off">
+                    <input type="text" class="apple-input mobile-form-input" id="phoneClipInput" placeholder="Text to copy on phone..." data-i18n-placeholder="phoneClipPlaceholder" required>
+                    <button class="btn-secondary mobile-form-btn" type="submit" id="btnSendPhoneClip">
+                      <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12h14"></path>
+                        <path d="M12 5l7 7-7 7"></path>
+                      </svg>
+                      <span data-i18n="btnPushClip">Push Text</span>
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </section>
+
+            <!-- Apple Shortcuts Bridge Section -->
+            <section class="canvas-section">
+              <div class="section-heading-row">
+                <div>
+                  <div class="section-heading" data-i18n="appleShortcutsTitle">Apple Shortcuts Bridge</div>
+                  <div class="section-subheading" data-i18n="appleShortcutsDesc">Direct iOS triggers &amp; Automation integration</div>
+                </div>
+              </div>
+
+              <!-- 4 Apple Shortcut Trigger Tiles -->
+              <div class="shortcuts-grid">
+                <!-- Trigger 1: Lock Screen -->
+                <button class="shortcut-tile" data-shortcut="Lock Screen" type="button">
+                  <div class="shortcut-icon-badge badge-lock">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                  </div>
+                  <div class="shortcut-info">
+                    <div class="shortcut-title" data-i18n="scLockScreen">Lock Screen</div>
+                    <div class="shortcut-meta">shortcuts://run-shortcut</div>
+                  </div>
+                </button>
+
+                <!-- Trigger 2: Low Power Mode -->
+                <button class="shortcut-tile" data-shortcut="Low Power Mode" type="button">
+                  <div class="shortcut-icon-badge badge-battery">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="1" y="6" width="18" height="12" rx="2" ry="2"></rect>
+                      <line x1="23" y1="11" x2="23" y2="13"></line>
+                    </svg>
+                  </div>
+                  <div class="shortcut-info">
+                    <div class="shortcut-title" data-i18n="scLowPower">Low Power Mode</div>
+                    <div class="shortcut-meta">shortcuts://run-shortcut</div>
+                  </div>
+                </button>
+
+                <!-- Trigger 3: Do Not Disturb -->
+                <button class="shortcut-tile" data-shortcut="Do Not Disturb" type="button">
+                  <div class="shortcut-icon-badge badge-dnd">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                  </div>
+                  <div class="shortcut-info">
+                    <div class="shortcut-title" data-i18n="scDnd">Do Not Disturb</div>
+                    <div class="shortcut-meta">shortcuts://run-shortcut</div>
+                  </div>
+                </button>
+
+                <!-- Trigger 4: Max Brightness -->
+                <button class="shortcut-tile" data-shortcut="Set Brightness" type="button">
+                  <div class="shortcut-icon-badge badge-brightness">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="5"></circle>
+                      <line x1="12" y1="1" x2="12" y2="3"></line>
+                      <line x1="12" y1="21" x2="12" y2="23"></line>
+                      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                      <line x1="1" y1="12" x2="3" y2="12"></line>
+                      <line x1="21" y1="12" x2="23" y2="12"></line>
+                      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                  </div>
+                  <div class="shortcut-info">
+                    <div class="shortcut-title" data-i18n="scMaxBrightness">Max Brightness</div>
+                    <div class="shortcut-meta">shortcuts://run-shortcut</div>
+                  </div>
+                </button>
+              </div>
+
+              <!-- 1-Click Setup Guide Collapsible Accordion -->
+              <div class="glass-card shortcuts-guide-card">
+                <button class="shortcuts-guide-header" id="btnToggleShortcutsGuide" type="button">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span data-i18n="scGuideToggle">How Apple Shortcuts Bridge works</span>
+                  </div>
+                  <svg class="icon icon-sm guide-chevron" id="shortcutsGuideChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+                <div class="shortcuts-guide-body" id="shortcutsGuideBody" style="display: none;">
+                  <ol class="shortcuts-guide-list">
+                    <li data-i18n="scGuideStep1">1. Open the Apple Shortcuts app on your iPhone or iPad.</li>
+                    <li data-i18n="scGuideStep2">2. Create a shortcut named matching any action above (e.g. Lock Screen, Low Power Mode).</li>
+                    <li data-i18n="scGuideStep3">3. Tap the trigger button above to execute it instantly via iOS URL schemes, or trigger AION from iPhone.</li>
+                  </ol>
+                </div>
+              </div>
+
+              <!-- iPhone Companion & Automation Setup Card -->
+              <div class="glass-card" style="padding: 16px; margin-top: 14px; border: 1px solid var(--border);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                  <div style="width: 32px; height: 32px; border-radius: var(--radius-sm); background: var(--accent-subtle); display: flex; align-items: center; justify-content: center; color: var(--accent);">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                      <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                    </svg>
+                  </div>
+                  <div>
+                    <div style="font-size: 14px; font-weight: 600;" data-i18n="setupIPhoneTitle">Set Up iPhone Control</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);" data-i18n="setupIPhoneDesc">Enable instant web push alerts and native Apple Shortcuts automation.</div>
+                  </div>
+                </div>
+
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;">
+                  <button class="btn-primary" id="btnEnablePushNotify" type="button" style="padding: 8px 14px; font-size: 12px;">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
+                    <span data-i18n="btnEnablePush">Enable Web Push</span>
+                  </button>
+
+                  <button class="btn-secondary" id="btnGetRunnerShortcut" type="button" style="padding: 8px 14px; font-size: 12px;">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polyline>
+                    </svg>
+                    <span data-i18n="btnInstallRunner">Get 'AION Runner' Shortcut</span>
+                  </button>
+
+                  <a href="/api/ios/profile.mobileconfig?theme=dark" class="btn-secondary" style="padding: 8px 14px; font-size: 12px; text-decoration: none;" download>
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span data-i18n="btnDownloadWebClip">Install iOS Web Clip Profile</span>
+                  </a>
+                </div>
+              </div>
+            </section>
+
+          </div>
 
           <!-- Section 3: Recent Activity (Compact 3 Most Recent Actions) -->
           <section class="canvas-section">
@@ -337,9 +772,15 @@
   <div class="modal-backdrop" id="settingsModal">
     <div class="modal-box settings-modal-box" role="dialog" aria-modal="true">
       <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 14px;">
-        <div>
-          <h2 class="modal-title" data-i18n="viewSettingsTitle">Preferences</h2>
-          <p class="modal-desc" data-i18n="viewSettingsSubtitle">Customize language, appearance, and developer options.</p>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="brand-logo-group brand-logo-modal">
+            <img src="/brand/icon-light.svg" class="brand-mark brand-mark-light" alt="AION" style="height: 28px; width: 28px;">
+            <img src="/brand/icon-dark.svg" class="brand-mark brand-mark-dark" alt="AION" style="height: 28px; width: 28px;">
+          </div>
+          <div>
+            <h2 class="modal-title" data-i18n="viewSettingsTitle">Preferences</h2>
+            <p class="modal-desc" data-i18n="viewSettingsSubtitle">Customize language, appearance, and developer options.</p>
+          </div>
         </div>
         <button class="icon-btn" id="btnCloseSettings" type="button" aria-label="Close">
           <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -419,17 +860,74 @@
             <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
             <line x1="12" y1="2" x2="12" y2="12"></line>
           </svg>
-          <span data-i18n="btnEnableWol">Enable Wake in OS</span>
+          <span data-i18n="btnEnableWol">Enable in Windows</span>
         </button>
       </div>
 
-      <!-- Group 4: Developer Mode Toggle & Hidden Diagnostics -->
+      <!-- Group 4: System Updates (Accessible to all users) -->
+      <div class="settings-group">
+        <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;" data-i18n="devUpdatesTitle">System Updates</div>
+        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;" data-i18n="devUpdatesDesc">Check GitHub repository for updates and apply seamlessly.</p>
+        
+        <div class="updater-controls-row" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+          <div class="updater-info" style="display: flex; align-items: center; gap: 8px;">
+            <span class="updater-version-tag" id="updaterVersionTag" style="font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; border-radius: var(--radius-xs); background: var(--surface-hover);">v1.0.0-beta.2</span>
+            <span class="updater-status-label" id="updateStatusLabel" data-i18n="upToDateMsg" style="font-size: 12.5px; color: var(--text-secondary);">Your system is up to date</span>
+          </div>
+          <div class="updater-btns" style="display: flex; gap: 8px;">
+            <button class="btn-secondary" id="btnCheckUpdates" type="button" style="padding: 6px 14px; font-size: 12px;">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+              <span data-i18n="btnCheckUpdates">Check for Updates</span>
+            </button>
+            <button class="btn-primary" id="btnApplyUpdate" type="button" style="display: none; padding: 6px 14px; font-size: 12px;">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span data-i18n="btnApplyUpdate">Install Update</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Group 5: Pairing & Trusted Devices -->
+      <div class="settings-group">
+        <div class="settings-group-title" data-i18n="sectionPairing">Pairing &amp; Trusted Devices</div>
+        <p class="settings-section-desc" data-i18n="pairingPinDesc">
+          Use this 4-digit PIN to pair phones, tablets, and remote workstations to this computer.
+        </p>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--surface-translucent); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); margin-bottom: 12px;">
+          <div>
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: 600;">Active Pairing PIN</div>
+            <div id="settingsPairingPin" style="font-size: 24px; font-weight: 700; color: var(--accent); letter-spacing: 4px;">----</div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-secondary" id="btnRegeneratePin" type="button" style="padding: 6px 12px; font-size: 12px;" data-i18n="btnRegeneratePin">Regenerate PIN</button>
+            <a href="/api/ios/profile.mobileconfig?theme=dark" class="btn-secondary" id="btnDownloadIosProfile" style="padding: 6px 12px; font-size: 12px; text-decoration: none;" data-i18n="btnDownloadWebClip">iOS Profile</a>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;" data-i18n="trustedDevicesTitle">Remembered Devices</div>
+          <div id="trustedDevicesList" style="display: flex; flex-direction: column; gap: 6px;">
+            <div style="font-size: 12px; color: var(--text-tertiary);" data-i18n="trustedDevicesEmpty">No remote devices paired yet.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Group 6: Developer Mode Toggle & Hidden Diagnostics -->
       <div class="settings-group">
         <div class="toggle-wrapper">
           <div>
             <div class="settings-group-title" data-i18n="sectionDeveloper">Developer Mode</div>
             <p class="settings-section-desc" style="margin-bottom: 0; font-size: 12.5px;" data-i18n="sectionDeveloperDesc">
-              When enabled, reveals the live event stream drawer, technical node telemetry, and system update controls.
+              When enabled, reveals the live event stream drawer and technical node telemetry.
             </p>
           </div>
           <label class="toggle-switch">
@@ -482,37 +980,6 @@
               </div>
               <div class="dev-console-logs" id="devConsoleLogs">
                 <!-- Populated dynamically via EventSource /api/logs -->
-              </div>
-            </div>
-          </div>
-
-          <!-- System Updates Controls -->
-          <div style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
-            <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;" data-i18n="devUpdatesTitle">System Updates</div>
-            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;" data-i18n="devUpdatesDesc">Check GitHub repository for updates and apply seamlessly.</p>
-            
-            <div class="updater-controls-row" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
-              <div class="updater-info" style="display: flex; align-items: center; gap: 8px;">
-                <span class="updater-version-tag" id="updaterVersionTag" style="font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; border-radius: var(--radius-xs); background: var(--surface-hover);">v1.0.0</span>
-                <span class="updater-status-label" id="updateStatusLabel" data-i18n="upToDateMsg" style="font-size: 12.5px; color: var(--text-secondary);">Your system is up to date</span>
-              </div>
-              <div class="updater-btns" style="display: flex; gap: 8px;">
-                <button class="btn-secondary" id="btnCheckUpdates" type="button" style="padding: 6px 14px; font-size: 12px;">
-                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <polyline points="1 20 1 14 7 14"></polyline>
-                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                  </svg>
-                  <span data-i18n="btnCheckUpdates">Check for Updates</span>
-                </button>
-                <button class="btn-primary" id="btnApplyUpdate" type="button" style="display: none; padding: 6px 14px; font-size: 12px;">
-                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                  <span data-i18n="btnApplyUpdate">Install Update</span>
-                </button>
               </div>
             </div>
           </div>
@@ -609,6 +1076,71 @@
         <button class="btn-secondary" id="quitModalCancel" type="button" data-i18n="modalCancel">Cancel</button>
         <button class="btn-primary" id="quitModalConfirm" type="button" data-i18n="modalConfirm">Close App</button>
       </div>
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- FIND PHONE VISUAL PULSE OVERLAY (for Mobile Client)                 -->
+  <!-- =================================================================== -->
+  <div class="mobile-ping-overlay" id="mobilePingOverlay" style="display: none;">
+    <div class="ping-pulse-container">
+      <div class="ping-pulse-ring ring-1"></div>
+      <div class="ping-pulse-ring ring-2"></div>
+      <div class="ping-pulse-ring ring-3"></div>
+      <div class="ping-overlay-content">
+        <div class="ping-bell-icon">
+          <svg class="icon icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+        </div>
+        <h2 class="ping-overlay-title" data-i18n="pingAlertTitle">Finding Device</h2>
+        <p class="ping-overlay-desc">Chime &amp; vibration alert from AION</p>
+        <button class="btn-primary ping-dismiss-btn" id="btnDismissMobilePing" type="button" data-i18n="pingAlertDismiss">
+          Tap to Silence
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- PAIRING MODAL DIALOG (Remote Mobile Clients)                       -->
+  <!-- =================================================================== -->
+  <div class="modal-backdrop" id="pairingModal" style="display: none;">
+    <div class="modal-box" role="dialog" aria-modal="true" style="max-width: 440px;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 class="modal-title" data-i18n="pairModalTitle">Pair This Device</h2>
+        <p class="modal-desc" data-i18n="pairModalSubtitle">Enter the 4-digit PIN displayed on your host workstation or setup screen.</p>
+      </div>
+
+      <div style="display: flex; justify-content: center; margin-bottom: 16px;">
+        <input 
+          type="text" 
+          inputmode="numeric"
+          pattern="[0-9]*" 
+          maxlength="4" 
+          class="modal-input" 
+          id="pairPinInput" 
+          placeholder="0000" 
+          style="font-size: 32px; letter-spacing: 12px; text-align: center; font-weight: 700; width: 180px; padding: 10px 0;"
+          autocomplete="one-time-code"
+        >
+      </div>
+
+      <div class="modal-field" style="margin-bottom: 16px;">
+        <label class="modal-label" data-i18n="pairDeviceNameLabel">Device Name</label>
+        <input type="text" class="modal-input" id="pairDeviceNameInput" placeholder="e.g. My iPhone">
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+        <input type="checkbox" id="pairRememberDevice" checked style="accent-color: var(--accent); width: 16px; height: 16px;">
+        <label for="pairRememberDevice" style="font-size: 13px; color: var(--text-secondary); cursor: pointer;" data-i18n="pairRememberDevice">Remember this device permanently</label>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 0;">
+        <button class="btn-primary" id="btnSubmitPairing" type="button" style="width: 100%; justify-content: center;" data-i18n="btnPairDevice">Pair Device</button>
+      </div>
+      <div id="pairErrorMsg" style="color: #ef4444; font-size: 12px; text-align: center; margin-top: 10px; display: none;"></div>
     </div>
   </div>
 

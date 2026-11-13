@@ -57,8 +57,9 @@ export function buildAiEnvironment() {
 
 /**
  * Executes a prompt against headless agy CLI with timeout management and stderr capture
+ * Default timeout is 900,000ms (15 minutes) to ensure long builds and tool runs never abort prematurely
  */
-export function executeAiPrompt(prompt, timeoutMs = 60000) {
+export function executeAiPrompt(prompt, timeoutMs = 900000) {
   return new Promise((resolve) => {
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
       return resolve({

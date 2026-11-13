@@ -62,23 +62,35 @@ export function renderSettingsWol() {
 
   if (!cachedWol || !cachedWol.supported) {
     badge.textContent = 'Not Supported';
+    badge.title = 'No physical network adapter supporting Wake-on-LAN was detected.';
     badge.style.color = 'var(--text-tertiary)';
     if (btn) btn.style.display = 'none';
     return;
   }
 
-  if (cachedWol.enabled) {
-    badge.textContent = t('wolBadge') || 'Enabled';
+  const state = cachedWol.state || (cachedWol.enabled ? (cachedWol.fastStartupBlocking ? 'fast_startup_blocked' : 'os_ready') : 'disabled');
+
+  if (state === 'os_ready') {
+    badge.textContent = t('wolOsReady') || 'OS Ready (Verify BIOS)';
+    badge.title = t('wolTooltipBios') || 'Adapter WoL is active and Fast Startup is disabled. Ensure WoL is enabled in UEFI/BIOS.';
     badge.style.color = 'var(--color-success)';
     if (btn) btn.style.display = 'none';
-  } else if (cachedWol.fastStartupBlocking) {
+  } else if (state === 'fast_startup_blocked') {
     badge.textContent = t('wolFastStartupWarn') || 'Fast Startup Blocking';
+    badge.title = 'Windows Fast Startup blocks WoL magic packets on hybrid shutdown. Click below to disable Fast Startup.';
     badge.style.color = 'var(--color-warning)';
-    if (btn) btn.style.display = 'inline-flex';
+    if (btn) {
+      btn.style.display = 'inline-flex';
+      btn.textContent = t('btnEnableWol') || 'Enable in Windows';
+    }
   } else {
-    badge.textContent = t('wolDisabled') || 'Disabled';
+    badge.textContent = t('wolDisabled') || 'Disabled in OS';
+    badge.title = 'Wake on Magic Packet is not currently enabled on the active physical network adapter.';
     badge.style.color = 'var(--color-warning)';
-    if (btn) btn.style.display = 'inline-flex';
+    if (btn) {
+      btn.style.display = 'inline-flex';
+      btn.textContent = t('btnEnableWol') || 'Enable in Windows';
+    }
   }
 }
 
@@ -206,6 +218,16 @@ function getSelectedDevice() {
   return cachedDevices.find((d) => d.id === selectedDeviceId) || cachedDevices[0] || null;
 }
 
+export function isMobileDevice(dev) {
+  if (!dev) return false;
+  const t = (dev.type || '').toLowerCase();
+  const os = (dev.os || '').toLowerCase();
+  return (
+    ['phone', 'mobile', 'tablet', 'ipad', 'iphone', 'android'].includes(t) ||
+    ['ios', 'android', 'ipados'].includes(os)
+  );
+}
+
 export function getDeviceIconName(type) {
   const t = (type || '').toLowerCase();
   if (t === 'laptop') return 'laptop';
@@ -283,8 +305,30 @@ function renderActiveCanvasView() {
     if (chatView) chatView.style.display = 'none';
     if (deviceView) {
       deviceView.style.display = 'block';
+      const dev = getSelectedDevice();
       renderDeviceCanvasHeader();
-      renderRunningProcesses();
+
+      const desktopPower = document.getElementById('desktopPowerSection');
+      const desktopMedia = document.getElementById('mediaDeckSection');
+      const desktopApps = document.getElementById('desktopAppsSection');
+      const mobileCompanion = document.getElementById('mobileCompanionDeck');
+
+      if (isMobileDevice(dev)) {
+        if (desktopPower) desktopPower.style.display = 'none';
+        if (desktopMedia) desktopMedia.style.display = 'none';
+        if (desktopApps) desktopApps.style.display = 'none';
+        if (mobileCompanion) {
+          mobileCompanion.style.display = 'block';
+          renderMobileCompanionDeck(dev);
+        }
+      } else {
+        if (desktopPower) desktopPower.style.display = 'block';
+        if (desktopMedia) desktopMedia.style.display = 'block';
+        if (desktopApps) desktopApps.style.display = 'block';
+        if (mobileCompanion) mobileCompanion.style.display = 'none';
+        renderRunningProcesses();
+      }
+
       renderCompactActivity();
     }
   }
@@ -308,7 +352,7 @@ function renderDeviceCanvasHeader() {
   const typeLabel = t(`deviceType${capitalize(dev.type)}`) || dev.type;
   const osLabel = dev.os || 'OS';
   const wolReady = (dev.isLocal && cachedWol?.enabled) || (!dev.isLocal && dev.mac);
-  const wolText = wolReady ? t('wolBadge') : '';
+  const wolText = wolReady && !isMobileDevice(dev) ? t('wolBadge') : '';
   const parts = [typeLabel, osLabel, wolText].filter(Boolean);
 
   if (subtitleEl) subtitleEl.textContent = parts.join(' • ');
@@ -322,9 +366,23 @@ function renderDeviceCanvasHeader() {
     statusText.textContent = isOnline ? t('statusConnected') : t('statusOffline');
   }
 
-  // Wake Button visibility
+  // View Screen Button (for Desktop / Laptop nodes)
+  const viewScreenBtn = document.getElementById('btnCanvasViewScreen');
+  if (viewScreenBtn) {
+    if (!isMobileDevice(dev)) {
+      viewScreenBtn.style.display = 'inline-flex';
+      viewScreenBtn.onclick = () => {
+        const target = dev.tailscaleIp || dev.lanIp || dev.id;
+        window.location.href = `rustdesk://${target}`;
+      };
+    } else {
+      viewScreenBtn.style.display = 'none';
+    }
+  }
+
+  // Wake Button visibility (only for desktop / PC nodes with MAC)
   if (wakeBtn) {
-    if (!isOnline && dev.mac) {
+    if (!isOnline && dev.mac && !isMobileDevice(dev)) {
       wakeBtn.style.display = 'inline-flex';
       wakeBtn.onclick = () => wakeDevice(dev.id, dev.mac);
     } else {
@@ -336,6 +394,102 @@ function renderDeviceCanvasHeader() {
   const editBtn = document.getElementById('btnEditCurrentDevice');
   if (editBtn) {
     editBtn.onclick = () => openEditModal(dev);
+  }
+}
+
+// ==========================================================================
+// Mobile Companion Deck Controller
+// ==========================================================================
+
+export async function sendMobileCommand(deviceId, action, payload = {}) {
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.status !== 'ok') {
+      showToast(data.error || 'Failed sending command to device', 'close');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    showToast(`Command error: ${err.message}`, 'close');
+    return false;
+  }
+}
+
+export function renderMobileCompanionDeck(dev) {
+  if (!dev) return;
+
+  const batteryEl = document.getElementById('mobileBatteryLevel');
+  const batteryBadge = document.getElementById('mobileBatteryBadge');
+  const routeVal = document.getElementById('mobileRouteValue');
+  const wakeState = document.getElementById('mobileWakeState');
+  const lastSeenEl = document.getElementById('mobileLastSeen');
+  const wakeToggle = document.getElementById('toggleMobileWakeLock');
+
+  const telem = dev.telemetry || null;
+
+  // 1. Battery Telemetry
+  if (batteryEl && batteryBadge) {
+    if (telem && typeof telem.battery === 'number' && !isNaN(telem.battery)) {
+      batteryEl.textContent = `${Math.round(telem.battery)}%`;
+      if (telem.charging === true) {
+        batteryBadge.textContent = t('mobileCharging') || 'Charging';
+        batteryBadge.className = 'mobile-pill-badge charging';
+      } else if (telem.charging === false) {
+        batteryBadge.textContent = t('mobileDischarging') || 'On Battery';
+        batteryBadge.className = 'mobile-pill-badge';
+      } else {
+        batteryBadge.textContent = '--';
+        batteryBadge.className = 'mobile-pill-badge';
+      }
+    } else {
+      batteryEl.textContent = '--%';
+      batteryBadge.textContent = dev.os?.toLowerCase().includes('ios') ? 'iOS Sandbox' : '--';
+      batteryBadge.className = 'mobile-pill-badge';
+    }
+  }
+
+  // 2. Connection Route
+  if (routeVal) {
+    const route = telem?.route || (dev.tailscaleIp ? 'mesh' : 'lan');
+    routeVal.textContent = route === 'lan' ? (t('mobileRouteLan') || 'Direct LAN / Wi-Fi') : (t('mobileRouteMesh') || 'Tailscale Mesh');
+  }
+
+  // 3. Screen Wake Lock
+  if (wakeState) {
+    const isActive = Boolean(telem?.wakeLock);
+    wakeState.textContent = isActive ? (t('mobileWakeActive') || 'Active (Always On)') : (t('mobileWakeNormal') || 'Normal Timeout');
+  }
+  if (wakeToggle) {
+    wakeToggle.checked = Boolean(telem?.wakeLock);
+  }
+
+  // 4. Last Seen
+  if (lastSeenEl) {
+    if (telem?.updatedAt) {
+      lastSeenEl.textContent = formatLastSeen(telem.updatedAt);
+    } else if (dev.lastSeen) {
+      lastSeenEl.textContent = formatLastSeen(dev.lastSeen);
+    } else {
+      lastSeenEl.textContent = dev.online !== false ? (t('mobileJustNow') || 'Active now') : (t('statusOffline') || 'Offline');
+    }
+  }
+}
+
+function formatLastSeen(isoStr) {
+  if (!isoStr) return t('mobileJustNow') || 'Active now';
+  try {
+    const diffSec = Math.round((Date.now() - new Date(isoStr).getTime()) / 1000);
+    if (diffSec < 45) return t('mobileJustNow') || 'Active now';
+    if (diffSec < 3600) return `${Math.max(1, Math.round(diffSec / 60))}m ago`;
+    if (diffSec < 86400) return `${Math.round(diffSec / 3600)}h ago`;
+    return new Date(isoStr).toLocaleDateString();
+  } catch {
+    return t('mobileJustNow') || 'Active now';
   }
 }
 
@@ -478,6 +632,12 @@ function renderAllDevicesCards() {
         </div>
 
         <div style="display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end;">
+          ${!isMobileDevice(dev) ? `
+            <button class="btn-secondary" data-view-screen-target="${escapeHtml(dev.tailscaleIp || dev.lanIp || dev.id)}" type="button" style="padding: 6px 14px; font-size: 12px;">
+              ${getSvgIcon('desktop', 'icon-sm')}
+              <span>${t('btnViewScreen')}</span>
+            </button>
+          ` : ''}
           ${!isOnline && dev.mac ? `
             <button class="btn-primary" data-wake-id="${dev.id}" data-wake-mac="${dev.mac}" type="button" style="padding: 6px 14px; font-size: 12px;">
               ${getSvgIcon('wake', 'icon-sm')}
@@ -505,6 +665,13 @@ function renderAllDevicesCards() {
       const id = btn.getAttribute('data-wake-id');
       const mac = btn.getAttribute('data-wake-mac');
       if (id) wakeDevice(id, mac);
+    });
+  });
+
+  container.querySelectorAll('[data-view-screen-target]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = btn.getAttribute('data-view-screen-target');
+      if (target) window.location.href = `rustdesk://${target}`;
     });
   });
 }
@@ -649,6 +816,146 @@ export function initDevicesModule() {
     enableSystemWol();
   });
 
+  // Mobile Companion Actions
+  // 1. Ping / Find Phone
+  document.getElementById('btnPingPhone')?.addEventListener('click', async () => {
+    const dev = getSelectedDevice();
+    if (!dev) return;
+    const ok = await sendMobileCommand(dev.id, 'ping');
+    if (ok) {
+      showToast(t('pingSent', { name: dev.name }) || `Ping sent to ${dev.name}`, 'bell');
+      addActivity(t('btnPingPhone') || 'Find Phone', t('pingSent', { name: dev.name }) || `Ping sent to ${dev.name}`, 'activity');
+    }
+  });
+
+  // 2. Keep Screen Awake Switch
+  document.getElementById('toggleMobileWakeLock')?.addEventListener('change', async (e) => {
+    const dev = getSelectedDevice();
+    if (!dev) return;
+    const enabled = e.target.checked;
+    const ok = await sendMobileCommand(dev.id, 'wake_lock', { enabled });
+    if (ok) {
+      showToast(enabled ? 'Screen awake enabled' : 'Screen awake disabled', 'sun');
+      addActivity(t('mobileScreenWake') || 'Screen Wake', enabled ? 'Always On' : 'Normal', 'sun');
+      if (dev.telemetry) dev.telemetry.wakeLock = enabled;
+      renderMobileCompanionDeck(dev);
+    } else {
+      e.target.checked = !enabled;
+    }
+  });
+
+  // 3. Open URL on Phone
+  document.getElementById('formPhoneUrl')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const dev = getSelectedDevice();
+    if (!dev) return;
+    const input = document.getElementById('phoneUrlInput');
+    const url = input?.value?.trim();
+    if (!url) return;
+
+    const ok = await sendMobileCommand(dev.id, 'open_url', { url });
+    if (ok) {
+      showToast(t('urlSent', { name: dev.name }) || `URL sent to ${dev.name}`, 'link');
+      addActivity(t('btnOpenOnPhone') || 'Open URL', url, 'link');
+      if (input) input.value = '';
+    }
+  });
+
+  // 4. Push Clipboard to Phone
+  document.getElementById('formPhoneClip')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const dev = getSelectedDevice();
+    if (!dev) return;
+    const input = document.getElementById('phoneClipInput');
+    const text = input?.value?.trim();
+    if (!text) return;
+
+    const ok = await sendMobileCommand(dev.id, 'clipboard', { text });
+    if (ok) {
+      showToast(t('clipSent', { name: dev.name }) || `Clipboard sent to ${dev.name}`, 'clipboard');
+      addActivity(t('btnPushClip') || 'Push Text', text.slice(0, 32), 'clipboard');
+      if (input) input.value = '';
+    }
+  });
+
+  // 5. Apple Shortcuts Triggers
+  document.querySelectorAll('.shortcut-tile').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const shortcutName = btn.getAttribute('data-shortcut');
+      if (!shortcutName) return;
+      const dev = getSelectedDevice();
+      const shortcutUrl = `shortcuts://run-shortcut?name=${encodeURIComponent(shortcutName)}`;
+      const isMobileClient = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
+
+      if (isMobileClient) {
+        window.location.href = shortcutUrl;
+      } else if (dev && isMobileDevice(dev)) {
+        await sendMobileCommand(dev.id, 'open_url', { url: shortcutUrl });
+        showToast(`Shortcut '${shortcutName}' sent to ${dev.name}`, 'activity');
+      } else {
+        window.location.href = shortcutUrl;
+      }
+    });
+  });
+
+  // 6. Setup Guide Accordion Toggle
+  document.getElementById('btnToggleShortcutsGuide')?.addEventListener('click', () => {
+    const body = document.getElementById('shortcutsGuideBody');
+    const chevron = document.getElementById('shortcutsGuideChevron');
+    if (!body) return;
+    const isHidden = body.style.display === 'none';
+    body.style.display = isHidden ? 'block' : 'none';
+    chevron?.classList.toggle('open', isHidden);
+  });
+
+  // 7. Refresh Telemetry Button
+  document.getElementById('btnRefreshMobileTelemetry')?.addEventListener('click', async () => {
+    await fetchDevices();
+    showToast('Telemetry refreshed', 'check');
+  });
+
+  // 8. 1-Tap Web Push Notifications Activation
+  document.getElementById('btnEnablePushNotify')?.addEventListener('click', async () => {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showToast('Push notifications not supported on this browser', 'alert');
+        return;
+      }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        showToast('Push permission denied', 'alert');
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const keyRes = await fetch('/api/push/vapid-public-key');
+      const keyData = await keyRes.json();
+      if (!keyData.publicKey) {
+        showToast('Failed to retrieve VAPID key', 'alert');
+        return;
+      }
+      const appKey = urlBase64ToUint8Array(keyData.publicKey);
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appKey,
+      });
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: sub, deviceId: selectedDeviceId }),
+      });
+      showToast('Web Push successfully enabled!', 'activity');
+    } catch (err) {
+      showToast(`Push activation error: ${err.message}`, 'alert');
+    }
+  });
+
+  // 9. Get 'AION Runner' Shortcut
+  document.getElementById('btnGetRunnerShortcut')?.addEventListener('click', () => {
+    const shortcutUrl = 'shortcuts://import-shortcut?name=AION%20Runner';
+    window.location.href = shortcutUrl;
+    showToast("Opening 'AION Runner' shortcut in Apple Shortcuts...", 'activity');
+  });
+
   // Subscribe to activity updates so recent activity re-renders
   subscribe((state, key) => {
     if (key === 'activityFeed') {
@@ -680,6 +987,17 @@ function escapeHtml(str) {
 function capitalize(s) {
   if (!s) return '';
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
 }
 
 export { renderAll as renderDevicesView };

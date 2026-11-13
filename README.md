@@ -1,223 +1,106 @@
 <div align="center">
-
-# AION
-### Autonomous Interactive Operations Node
-
-**Zero-Cloud Workstation Orchestration • Sub-50MB Memory Working Set • Native OS Kernel Hooks • Encrypted WireGuard Mesh**
-
-[![Runtime](https://img.shields.io/badge/Node.js-v20%2B-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![Dependencies](https://img.shields.io/badge/Dependencies-0_External-000000?style=flat-square)](package.json)
-[![Tests](https://img.shields.io/badge/Tests-node%3Atest_passing-brightgreen?style=flat-square)](tests/)
-[![Mesh](https://img.shields.io/badge/Network-Tailscale_WireGuard-blue?style=flat-square&logo=tailscale&logoColor=white)](https://tailscale.com)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
-
-<br/>
-
-```
-                +------------------------------------+
-                |       PWA Command Controller       |
-                |   (iOS Safari / Touch-Optimized)   |
-                +-----------------+------------------+
-                                  |
-                        [Tailscale WireGuard]
-                     Direct P2P Encrypted Mesh
-                                  |
-                                  v
-                +------------------------------------+
-                |        AION Mesh Supervisor        |
-                |   (Port 5050 / Zero-Polling SSE)   |
-                +----+------------+-------------+----+
-                     |            |             |
-       +-------------+            |             +-------------+
-       |                          |                           |
-       v                          v                           v
-+---------------+       +-------------------+       +-------------------+
-| Win32 Session |       | Headless AI Agent |       |   Cluster Sync    |
-| Isolation     |       | Execution Bridge  |       |   Loopback Hook   |
-| (rundll32)    |       | (Antigravity CLI) |       |  (Syncthing REST) |
-+---------------+       +-------------------+       +-------------------+
-```
-
+  <br />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/brand/titlelogo-light.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="public/brand/titlelogo-dark.svg" />
+    <img alt="AION" src="public/brand/titlelogo-dark.svg" width="340" />
+  </picture>
+  <br /><br />
+  <h3>Autonomous Interactive Operations Node</h3>
+  <p>
+    <strong>One calm, zero-bloat command center linking your PC, laptop, and phone.</strong><br />
+    Hardware control, Wake-on-LAN, live media &amp; audio deck, and local-first device sync — running under 50 MB of RAM with zero external runtime dependencies.
+  </p>
+  <br />
+  <p>
+    <a href="https://github.com/aawal-code/AION/releases">
+      <img src="https://img.shields.io/github/v/release/aawal-code/AION?include_prereleases&style=flat-square&color=2563EB&label=release" alt="Release" />
+    </a>
+    <img src="https://img.shields.io/badge/dependencies-0-10B981?style=flat-square" alt="Zero Dependencies" />
+    <img src="https://img.shields.io/badge/RAM-%3C50MB-0D0E11?style=flat-square" alt="Memory Footprint" />
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20iOS-0D0E11?style=flat-square" alt="Platforms" />
+    <a href="LICENSE">
+      <img src="https://img.shields.io/badge/license-MIT-2563EB?style=flat-square" alt="License" />
+    </a>
+  </p>
+  <br />
 </div>
 
 ---
 
-## Technical Overview
+## Why AION?
 
-AION is an ultra-lightweight, local-first node orchestration daemon engineered for heterogeneous workstation environments (Windows & Linux). It eliminates centralized cloud relays, telemetry overhead, and third-party SaaS dependencies by linking native operating system hooks, encrypted peer-to-peer mesh overlays, and local CLI toolchains into a unified command plane.
+Most multi-device setups force you to juggle a remote desktop client, a separate file-transfer utility, a media remote, and half a dozen background daemons that eat gigabytes of RAM.
 
-### Core Architectural Values
-
-* **Sub-50MB Memory Working Set:** The runtime dependency tree is strictly **0 Bytes** (`node_modules` does not exist). Built entirely on Node.js standard library primitives (`http`, `child_process`, `fs`, `os`, `path`).
-* **Session 0 Isolation Bypass:** Resolves Windows service isolation constraints by running as an elevated task daemon inside the interactive user context, triggering native desktop operations via detached Win32 process spawns (`rundll32.exe user32.dll,LockWorkStation`).
-* **Zero-Polling Telemetry:** Process diagnostics and audit events stream continuously over persistent Server-Sent Events (SSE), eliminating aggressive mobile polling and preserving client battery life.
-* **On-Demand P2P Remote Surface:** Zero idle GPU encoding overhead. Dispatches custom URI scheme invocations (`rustdesk://`) routed directly across private mesh IPs on demand.
-* **Autonomous Cluster Sync:** Dynamic REST API client interfacing with local loopback Syncthing instances (`127.0.0.1:8384`) with runtime XML credential resolution.
+**AION** replaces all of them with a single self-hosted node built on pure OS primitives:
+* **Local-First & Private:** Talks directly over your local Wi-Fi/Ethernet subnet first, falling back seamlessly to your private Tailscale mesh when you're away. No third-party cloud relays.
+* **Native App Feel:** Launches as a dedicated standalone desktop window on Windows and Linux, and installs as a cache-busted Progressive Web App (PWA) on iOS and Android.
+* **Zero-Trace Lifecycle:** Tracks everything it provisions in `install-manifest.json` — if you ever uninstall AION, it cleans up *only* what it installed and leaves your system untouched.
 
 ---
 
-## Systems Engineering Deep-Dive
+## Core Capabilities
 
-### 1. Win32 Interactive Session Decoupling
+| Module | What It Does |
+| :--- | :--- |
+| **Power & Hardware Control** | Auto-classifies desktops, laptops, and mobile nodes. Lock sessions, turn off displays without sleeping, sleep, shut down, and inspect or force-quit running apps. |
+| **Wake-on-LAN Engine** | Audits OS network adapter WoL readiness and Windows Fast Startup flags, then wakes sleeping machines remotely via UDP Magic Packets. |
+| **Live Media & Audio Deck** | Real-time **Now Playing** metadata and playback controls (WinRT GSMTC & MPRIS), master volume slider, Mute, and **Discord-style Deafen** (mutes output and mic simultaneously). |
+| **LAN & Mesh Transfer** *(In Progress)* | Zero-internet clipboard sync, instant image paste, and drag-and-drop file beaming across devices on your subnet or Tailscale network. |
+| **Smart Watchers & Assistant** *(In Progress)* | Background conditional rules (*"sleep when my download finishes"*) paired with a unified command bar featuring a local 0-token fast-path router. |
+| **Adaptive Cockpit UI** | Split-pane Apple-grade interface built with `Manrope` & `Cairo` typography, 10 built-in themes + custom color pickers, and full **English**, **Arabic (RTL)**, and **German** support. |
 
-Standard Windows background services run inside Session 0, isolated from the interactive desktop display. AION operates within the interactive logon session while decoupling process lifecycles, guaranteeing non-blocking system calls without stream-pipe hangs or deadlocks:
+---
 
-```javascript
-// Reliable workstation lock via unreferenced detached Win32 spawn
-const child = spawn(
-  path.join(process.env.SystemRoot, 'System32', 'rundll32.exe'),
-  ['user32.dll,LockWorkStation'],
-  { detached: true, stdio: 'ignore', windowsHide: true }
-);
-child.unref();
-```
+## Architecture
 
-### 2. Attack Surface Hardening & Input Sanitization
-
-Commands dispatched from the controller surface are strictly parsed before shell execution. The system enforces an explicit whitelist and rejects all shell metacharacters and directory traversal sequences:
-
-```javascript
-// src/utils/sanitizer.js
-const ALLOWED_ACTIONS = new Set(['lock', 'sleep', 'kill_process']);
-const SHELL_METACHARS = /[;&|`$<>\r\n]/;
-
-export function sanitizeCommand(action, target = '') {
-  if (!ALLOWED_ACTIONS.has(action)) {
-    throw new InvalidCommandError(`Disallowed action: ${action}`);
-  }
-  if (SHELL_METACHARS.test(action) || SHELL_METACHARS.test(target)) {
-    throw new InvalidCommandError('Shell metacharacters detected');
-  }
-  if (action === 'kill_process' && !/^[a-zA-Z0-9_\-\.]+$/.test(target)) {
-    throw new InvalidCommandError('Invalid process target descriptor');
-  }
-}
+```text
+┌─────────────────────┐        Local LAN (Subnet)        ┌─────────────────────┐
+│   iPhone / Laptop   │ ◄──────────────────────────────► │   Primary Desktop   │
+│  (PWA / App Window) │        Tailscale Mesh (VPN)      │  (AION Node :5050)  │
+└─────────────────────┘ ◄──────────────────────────────► └──────────┬──────────┘
+                                                                    │
+                                          ┌─────────────────────────┼─────────────────────────┐
+                                          ▼                         ▼                         ▼
+                                  [ Power & WoL ]          [ WinRT / CoreAudio ]     [ Process & Watchers ]
 ```
 
 ---
 
-## API Specification
+## Quick Start
 
-| Endpoint | Method | Format / Payload | Subsystem Action |
-| :--- | :--- | :--- | :--- |
-| `/api/logs` | `GET` | `text/event-stream` | Real-time SSE telemetry stream with rolling 25-event backlog replay. |
-| `/api/command` | `POST` | `{"action": "lock"}` | Dispatches sanitized Win32 / POSIX kernel operations. |
-| `/api/ai` | `POST` | `{"prompt": string}` | Sub-process bridge executing headless local AI agents (`agy`). |
-| `/api/sync/status` | `GET` | `application/json` | Resolves local `config.xml` token and queries active folder metrics. |
-| `/api/sync/folder` | `POST` | `{"id", "path", ...}` | Dynamically provisions shared paths across cluster nodes. |
-| `/api/sync/device` | `POST` | `{"deviceID", ...}` | Mutual TLS peer device pairing across the mesh. |
-| `/api/system/update/check` | `GET` | `application/json` | Checks local semver against GitHub Releases API with commit fallback. |
-| `/api/system/update/apply` | `POST` | `application/json` | Fetches latest tracked release/branch and hot-restarts the daemon. |
+### 1. Standalone Installers *(Recommended)*
+No Node.js or Tailscale pre-installed? AION's installer checks your system, fetches a portable Node runtime and headless Tailscale only if missing, registers the background daemon, and adds a native desktop launcher.
 
----
+* **Windows:** Download `AION-Setup.exe` from the [Releases](https://github.com/aawal-code/AION/releases) page and run it. Uninstall anytime via **Windows Settings → Installed Apps**.
+* **Linux (Ubuntu / Debian / Mint / Arch / Fedora):**
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/aawal-code/AION/main/scripts/install.sh | bash
+  ```
 
-## Automated Verification & Test Suite
-
-AION strictly rejects external test runners (no Jest, Mocha, or Vitest bloat). All validations execute via Node's native test runner (`node:test` and `node:assert/strict`):
+### 2. Run From Source
+Requires **Node.js v20+**:
 
 ```bash
-# Run full native test suite
-npm test
-```
-
-### Native Execution Log
-
-```
-▶ Architecture & Zero-Dependency Validation
-  ✔ verifies zero runtime npm dependencies (1.67ms)
-  ✔ verifies no hardcoded absolute user profiles exist in source code (2.18ms)
-✔ Architecture & Zero-Dependency Validation (4.89ms)
-
-▶ OS Command Sanitization
-  ✔ permits valid whitelisted actions (1.22ms)
-  ✔ permits valid process target for kill_process (with and without .exe, lowercase, spaces) (0.35ms)
-  ✔ rejects shell injection attempts in action (0.66ms)
-  ✔ rejects shell injection attempts in kill target (0.26ms)
-  ✔ killProcess returns clean JSON status when target is not currently running without throwing (299.38ms)
-✔ OS Command Sanitization (304.26ms)
-
-▶ Updater Service Logic
-  ✔ getLocalVersion returns valid semver string from package.json (1.28ms)
-  ✔ compareVersions accurately identifies newer, older, and identical versions (0.29ms)
-✔ Updater Service Logic (3.34ms)
-
-ℹ tests 9 | suites 3 | pass 9 | fail 0 | cancelled 0
-```
-
----
-
-## Deployment & Setup
-
-### Prerequisites
-* Node.js `>= 20.0.0`
-* Tailscale (WireGuard mesh routing)
-* Optional: Syncthing, RustDesk
-
-### Quickstart
-
-```bash
-# 1. Clone repository
 git clone https://github.com/aawal-code/AION.git
 cd AION
-
-# 2. Run unit tests
-npm test
-
-# 3. Start node daemon
-node src/server.js
+npm start
 ```
 
-### Windows Daemon Setup (Task Scheduler)
-
-To configure AION as an elevated background daemon that persists across reboots while retaining interactive session rights:
-
-```powershell
-# Run the automated installer
-powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
-```
-
-### Linux Engine Setup (systemd user service)
-
-For Linux systems (Ubuntu, Debian, Fedora, Arch, openSUSE), run the distro-agnostic installer with zero-root requirements:
-
-```bash
-chmod +x scripts/install.sh
-./scripts/install.sh
-```
-
-This provisions Node.js v20+ if missing, installs a `.desktop` menu launcher with scalable icon, and starts the daemon under `systemd --user` preserving interactive `DISPLAY`, `WAYLAND_DISPLAY`, and `DBUS_SESSION_BUS_ADDRESS` permissions.
+Open `http://localhost:5050` on your desktop, or connect from your phone via `http://<your-lan-or-tailscale-ip>:5050` and tap **Share → Add to Home Screen** on iOS.
 
 ---
 
-## Repository Structure
-
-```
-aion/
-├── src/
-│   ├── routes/
-│   │   └── router.js        # Native HTTP route dispatcher
-│   ├── services/
-│   │   ├── os.js            # Win32 & Linux session handling & process assassin
-│   │   ├── syncthing.js     # Loopback REST client & XML credential parser
-│   │   ├── ai-bridge.js     # Sandboxed CLI runner
-│   │   ├── updater.js       # Atomic GitHub release auto-updater & hot restart
-│   │   └── sse.js           # Server-Sent Events distribution engine
-│   ├── utils/
-│   │   └── sanitizer.js     # Strict action whitelisting & injection defenses
-│   └── server.js            # Runtime bootstrap & OS signal handling
-├── scripts/
-│   ├── setup.ps1            # Windows standalone installer & Task Scheduler setup
-│   └── install.sh           # Universal Linux installer & systemd user service setup
-├── public/                  # Enterprise PWA controller assets
-│   ├── index.html           # Hardware cockpit interface (EN, AR, DE)
-│   ├── manifest.json        # Standalone PWA web app manifest
-│   ├── sw.js                # App shell offline caching service worker
-│   └── icon.svg             # Vector glyph
-├── tests/                   # Native node:test validation suites
-├── docs/                    # Architectural assets & demo recordings
-└── package.json             # Manifest declaring zero dependencies
-```
-
 <div align="center">
-<sub>Engineered by Abdulaziz Awal • Systems Architecture & Distributed Node Orchestration</sub>
+  <br />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/brand/icon-light.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="public/brand/icon-dark.svg" />
+    <img alt="AION Mark" src="public/brand/icon-dark.svg" width="38" />
+  </picture>
+  <br /><br />
+  <p>
+    <strong>Engineered by <a href="https://github.com/aawal-code">Abdulaziz Awal</a></strong><br />
+    <sub>Built from scratch with zero dependencies.</sub>
+  </p>
 </div>

@@ -266,7 +266,20 @@ export async function getDevicesList() {
     }
   }
 
-  return Array.from(deviceMap.values());
+  const allDevices = Array.from(deviceMap.values()).map((dev) => {
+    const telem = getDeviceTelemetry(dev.id);
+    const updatedDev = { ...dev, telemetry: telem };
+    if (telem?.updatedAt) {
+      const ageMs = Date.now() - new Date(telem.updatedAt).getTime();
+      if (ageMs < 180000) {
+        updatedDev.online = true;
+        updatedDev.lastSeen = telem.updatedAt;
+      }
+    }
+    return updatedDev;
+  });
+
+  return allDevices;
 }
 
 /**
@@ -305,4 +318,123 @@ export async function updateDevice(id, patch = {}) {
   logEvent('COMMAND', `Updated device overrides for ${id}: ${JSON.stringify(patch)}`);
 
   return getDeviceById(id);
+}
+
+// ==========================================================================
+// In-Memory Mobile Telemetry & Remote Command Queue
+// ==========================================================================
+
+const deviceCommandQueues = new Map();
+const deviceTelemetryStore = new Map();
+const commandWaiters = new Map();
+
+/**
+ * Enqueues a command for a target device (e.g. mobile node)
+ */
+export function enqueueDeviceCommand(deviceId, action, payload = {}) {
+  if (!deviceId) throw new Error('Device id is required');
+  if (!action) throw new Error('Action is required');
+
+  if (!deviceCommandQueues.has(deviceId)) {
+    deviceCommandQueues.set(deviceId, []);
+  }
+
+  const queue = deviceCommandQueues.get(deviceId);
+  const cmd = {
+    id: `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    action: String(action).trim(),
+    payload: typeof payload === 'object' && payload !== null ? payload : {},
+    createdAt: new Date().toISOString(),
+  };
+
+  queue.push(cmd);
+  if (queue.length > 50) queue.shift();
+
+  // Notify any active long-poll waiters
+  const waiters = commandWaiters.get(deviceId);
+  if (waiters && waiters.size > 0) {
+    const toNotify = Array.from(waiters);
+    waiters.clear();
+    const batch = dequeueDeviceCommands(deviceId);
+    for (const resolve of toNotify) {
+      resolve(batch);
+    }
+  }
+
+  return cmd;
+}
+
+/**
+ * Dequeues all pending commands for a device
+ */
+export function dequeueDeviceCommands(deviceId) {
+  const queue = deviceCommandQueues.get(deviceId) || [];
+  deviceCommandQueues.set(deviceId, []);
+  return queue;
+}
+
+/**
+ * Waits for commands up to timeoutMs (supports long-polling or immediate return if timeoutMs <= 0)
+ */
+export function waitForDeviceCommands(deviceId, timeoutMs = 15000) {
+  const existing = dequeueDeviceCommands(deviceId);
+  if (existing.length > 0 || timeoutMs <= 0) {
+    return Promise.resolve(existing);
+  }
+
+  return new Promise((resolve) => {
+    if (!commandWaiters.has(deviceId)) {
+      commandWaiters.set(deviceId, new Set());
+    }
+    const waiters = commandWaiters.get(deviceId);
+
+    let timer = null;
+    const waiterFn = (cmds) => {
+      if (timer) clearTimeout(timer);
+      resolve(cmds);
+    };
+
+    waiters.add(waiterFn);
+
+    timer = setTimeout(() => {
+      waiters.delete(waiterFn);
+      resolve([]);
+    }, timeoutMs);
+  });
+}
+
+/**
+ * Updates in-memory telemetry for a device (battery, charging, wakeLock, route)
+ */
+export function setDeviceTelemetry(deviceId, data = {}) {
+  if (!deviceId) throw new Error('Device id is required');
+  const existing = deviceTelemetryStore.get(deviceId) || {};
+
+  const updated = {
+    battery: typeof data.battery === 'number' && !isNaN(data.battery) ? data.battery : (existing.battery ?? null),
+    charging: typeof data.charging === 'boolean' ? data.charging : (existing.charging ?? null),
+    wakeLock: typeof data.wakeLock === 'boolean' ? data.wakeLock : (existing.wakeLock ?? false),
+    route: data.route ? String(data.route).trim() : (existing.route || 'mesh'),
+    updatedAt: new Date().toISOString(),
+  };
+
+  deviceTelemetryStore.set(deviceId, updated);
+  logEvent('TELEMETRY', `Mobile telemetry updated for ${deviceId}: ${Math.round(updated.battery ?? 0)}% battery`);
+  return updated;
+}
+
+/**
+ * Gets telemetry for a device
+ */
+export function getDeviceTelemetry(deviceId) {
+  return deviceTelemetryStore.get(deviceId) || null;
+}
+
+/**
+ * Helper to clear queues (useful for testing)
+ */
+export function clearDeviceQueues() {
+  deviceCommandQueues.clear();
+  deviceTelemetryStore.clear();
+  commandWaiters.clear();
 }
