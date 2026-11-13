@@ -4,7 +4,7 @@
   "description": "Autonomous Interactive Operations Node",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
     "start": "node src/server.js"
   },
   "engines": {

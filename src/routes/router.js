@@ -33,6 +33,8 @@ import { getScreenViewStatus } from '../services/screen-view.js';
 import { getVapidPublicKey, saveSubscription, broadcastPush } from '../services/push.js';
 import { handleSystemRoutes } from './system.js';
 import { handleCommandsRoutes } from './commands.js';
+import { handleAuthRoutes } from './auth.js';
+import { handleNetworkRoutes } from './network.js';
 
 const PUBLIC_DIR = path.resolve('public');
 
@@ -189,78 +191,8 @@ export async function handleRequest(req, res) {
 
   // 2. Auth & Pairing Endpoints
   if (urlPath.startsWith('/api/auth')) {
-    // GET /api/auth/status
-    if (urlPath === '/api/auth/status' && req.method === 'GET') {
-      const authed = isAuthenticated(req);
-      const local = isLocalhost(req);
-      return sendJson(res, 200, {
-        status: 'ok',
-        authenticated: authed,
-        isLocalhost: local,
-        pin: local ? getPairingPin() : undefined,
-      });
-    }
-
-    // POST /api/auth/pair (Verify PIN and issue token)
-    if (urlPath === '/api/auth/pair' && req.method === 'POST') {
-      try {
-        const body = await readJsonBody(req, 64 * 1024);
-        const clientIp = req.socket?.remoteAddress || '';
-        const userAgent = req.headers?.['user-agent'] || '';
-        const result = pairAuthDevice({
-          pin: body.pin,
-          deviceName: body.deviceName,
-          userAgent,
-          ip: clientIp,
-          remember: body.remember !== false,
-        });
-
-        if (!result.success) {
-          return sendJson(res, 401, { status: 'error', error: result.error });
-        }
-
-        // Set persistent cookie
-        res.setHeader(
-          'Set-Cookie',
-          `aion_token=${result.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`
-        );
-        return sendJson(res, 200, { status: 'ok', ...result });
-      } catch (err) {
-        logEvent('ERROR', `Pairing error: ${err.message}`);
-        return sendJson(res, 500, { status: 'error', error: err.message });
-      }
-    }
-
-    // GET /api/auth/devices (Requires auth or localhost)
-    if (urlPath === '/api/auth/devices' && req.method === 'GET') {
-      if (!isAuthenticated(req)) {
-        return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
-      }
-      const devices = getTrustedDevices();
-      return sendJson(res, 200, { status: 'ok', devices });
-    }
-
-    // DELETE /api/auth/devices/:id
-    const revokeMatch = urlPath.match(/^\/api\/auth\/devices\/([^/]+)$/);
-    if (revokeMatch && req.method === 'DELETE') {
-      if (!isAuthenticated(req)) {
-        return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
-      }
-      const id = decodeURIComponent(revokeMatch[1]);
-      const success = revokeDevice(id);
-      return sendJson(res, 200, { status: success ? 'ok' : 'error', success });
-    }
-
-    // POST /api/auth/pin/regenerate (Localhost or authenticated admin only)
-    if (urlPath === '/api/auth/pin/regenerate' && req.method === 'POST') {
-      if (!isAuthenticated(req)) {
-        return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
-      }
-      const newPin = regeneratePairingPin();
-      return sendJson(res, 200, { status: 'ok', pin: newPin });
-    }
-
-    return sendJson(res, 404, { status: 'error', error: 'Unknown auth endpoint' });
+    const handled = await handleAuthRoutes(req, res, urlPath);
+    if (handled !== false) return;
   }
 
   // 3. Apple iOS Web Clip Profile (.mobileconfig)
@@ -333,6 +265,12 @@ export async function handleRequest(req, res) {
       logEvent('ERROR', `Screen view status error: ${err.message}`);
       return sendJson(res, 500, { status: 'error', error: err.message });
     }
+  }
+
+  // 6. Tailscale Mesh State Polling
+  if (urlPath.startsWith('/api/network')) {
+    const handled = await handleNetworkRoutes(req, res, urlPath);
+    if (handled !== false) return;
   }
 
   // --- STRICT AUTHENTICATION GUARD FOR REMAINING PROTECTED API ROUTES ---

@@ -6,6 +6,9 @@ import { logEvent } from './sse.js';
 const DATA_DIR = path.resolve('data');
 const TRUSTED_DEVICES_FILE = path.join(DATA_DIR, 'trusted-devices.json');
 
+export const PIN_CYCLE_DURATION_MS = 120 * 1000; // 120 seconds
+export const PIN_GRACE_PERIOD_MS = 15 * 1000;    // 15 seconds grace period
+
 /**
  * Ensures data directory exists
  */
@@ -13,6 +16,20 @@ function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+}
+
+/**
+ * Generates a clean 4-digit PIN (1000 - 9999)
+ */
+export function generatePin() {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
+/**
+ * Hashes a token using SHA-256 for secure storage
+ */
+export function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
 /**
@@ -25,10 +42,6 @@ function loadStore() {
       const raw = fs.readFileSync(TRUSTED_DEVICES_FILE, 'utf8');
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        if (!parsed.pin) {
-          parsed.pin = generatePin();
-          saveStore(parsed);
-        }
         if (!Array.isArray(parsed.devices)) {
           parsed.devices = [];
         }
@@ -40,7 +53,10 @@ function loadStore() {
   }
 
   const initial = {
-    pin: generatePin(),
+    currentPin: generatePin(),
+    expiresAt: new Date(Date.now() + PIN_CYCLE_DURATION_MS).toISOString(),
+    previousPin: null,
+    previousExpiresAt: null,
     devices: [],
   };
   saveStore(initial);
@@ -48,44 +64,109 @@ function loadStore() {
 }
 
 /**
- * Saves store to disk atomically
+ * Saves store to disk atomically with device merging to prevent concurrent test clobbering
  */
 function saveStore(store) {
   ensureDataDir();
   try {
-    const tmp = `${TRUSTED_DEVICES_FILE}.tmp`;
+    if (fs.existsSync(TRUSTED_DEVICES_FILE)) {
+      try {
+        const diskRaw = fs.readFileSync(TRUSTED_DEVICES_FILE, 'utf8');
+        const diskParsed = JSON.parse(diskRaw);
+        if (diskParsed && Array.isArray(diskParsed.devices)) {
+          const deviceMap = new Map();
+          for (const d of diskParsed.devices) {
+            if (d && d.id) deviceMap.set(d.id, d);
+          }
+          if (store._revokedId) {
+            deviceMap.delete(store._revokedId);
+            delete store._revokedId;
+          }
+          for (const d of store.devices) {
+            if (d && d.id) deviceMap.set(d.id, d);
+          }
+          store.devices = Array.from(deviceMap.values());
+        }
+      } catch {}
+    }
+
+    const tmp = `${TRUSTED_DEVICES_FILE}.${process.pid}.${Date.now()}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf8');
-    fs.renameSync(tmp, TRUSTED_DEVICES_FILE);
+    try {
+      fs.renameSync(tmp, TRUSTED_DEVICES_FILE);
+    } catch {
+      fs.writeFileSync(TRUSTED_DEVICES_FILE, JSON.stringify(store, null, 2), 'utf8');
+      try { fs.unlinkSync(tmp); } catch {}
+    }
   } catch (err) {
     logEvent('ERROR', `Failed writing trusted-devices.json: ${err.message}`);
   }
 }
 
 /**
- * Generates a clean 4-digit PIN (1000 - 9999)
+ * Ensures the rolling PIN is current and advances cycle if expired
  */
-function generatePin() {
-  return Math.floor(1000 + Math.random() * 9000).toString();
+function ensureRollingPin(store, now = Date.now()) {
+  if (!store.currentPin) {
+    store.currentPin = store.pin || generatePin();
+    store.expiresAt = new Date(now + PIN_CYCLE_DURATION_MS).toISOString();
+    store.previousPin = null;
+    store.previousExpiresAt = null;
+    store.pin = store.currentPin;
+    saveStore(store);
+    return store;
+  }
+
+  const expiresTime = store.expiresAt ? new Date(store.expiresAt).getTime() : 0;
+
+  if (now >= expiresTime) {
+    const timePassedSinceExpiry = now - expiresTime;
+
+    if (timePassedSinceExpiry < PIN_GRACE_PERIOD_MS) {
+      // PIN expired within the last 15 seconds: retain as previousPin for grace period
+      store.previousPin = store.currentPin;
+      store.previousExpiresAt = store.expiresAt;
+    } else {
+      // More than grace period passed: drop previousPin
+      store.previousPin = null;
+      store.previousExpiresAt = null;
+    }
+
+    store.currentPin = generatePin();
+    store.expiresAt = new Date(now + PIN_CYCLE_DURATION_MS).toISOString();
+    store.pin = store.currentPin;
+    saveStore(store);
+    logEvent('AUTH', `Rolling PIN cycled to: ${store.currentPin} (expires in 120s)`);
+  }
+
+  return store;
 }
 
 /**
- * Hashes a token using SHA-256 for secure storage
- */
-function hashToken(token) {
-  return crypto.createHash('sha256').update(String(token)).digest('hex');
-}
-
-/**
- * Checks if incoming request is from localhost
+ * Checks if incoming request is from localhost or has localhost Host header
  */
 export function isLocalhost(req) {
-  const remote = req?.socket?.remoteAddress || '';
-  return (
+  if (!req) return false;
+
+  const remote = req.socket?.remoteAddress || '';
+  const host = req.headers?.host || '';
+  const hostName = host.split(':')[0].toLowerCase();
+
+  const isRemoteLocal = (
     remote === '127.0.0.1' ||
     remote === '::1' ||
     remote === '::ffff:127.0.0.1' ||
     remote === 'localhost'
   );
+
+  const isHostLocal = (
+    hostName === 'localhost' ||
+    hostName === '127.0.0.1' ||
+    hostName === '[::1]' ||
+    hostName === '::1'
+  );
+
+  return isRemoteLocal || isHostLocal;
 }
 
 /**
@@ -123,32 +204,74 @@ export function extractToken(req) {
 }
 
 /**
- * Retrieves the active 4-digit pairing PIN
+ * Retrieves the active rolling pairing PIN info with expiration countdown
  */
-export function getPairingPin() {
+export function getRollingPinInfo(now = Date.now()) {
   const store = loadStore();
-  return store.pin;
+  ensureRollingPin(store, now);
+
+  const expiresTime = new Date(store.expiresAt).getTime();
+  const milliseconds_remaining = Math.max(0, expiresTime - now);
+
+  return {
+    currentPin: store.currentPin,
+    expiresAt: store.expiresAt,
+    milliseconds_remaining,
+    millisecondsRemaining: milliseconds_remaining,
+    pin: store.currentPin,
+  };
 }
 
 /**
- * Regenerates the 4-digit pairing PIN
+ * Retrieves the active 4-digit pairing PIN string
  */
-export function regeneratePairingPin() {
+export function getPairingPin(now = Date.now()) {
+  return getRollingPinInfo(now).currentPin;
+}
+
+/**
+ * Force regenerates the 4-digit pairing PIN immediately
+ */
+export function regeneratePairingPin(now = Date.now()) {
   const store = loadStore();
-  store.pin = generatePin();
+  store.previousPin = store.currentPin;
+  store.previousExpiresAt = new Date(now).toISOString();
+  store.currentPin = generatePin();
+  store.expiresAt = new Date(now + PIN_CYCLE_DURATION_MS).toISOString();
+  store.pin = store.currentPin;
   saveStore(store);
-  logEvent('AUTH', `Pairing PIN regenerated: ${store.pin}`);
-  return store.pin;
+  logEvent('AUTH', `Pairing PIN forcefully regenerated: ${store.currentPin}`);
+  return store.currentPin;
 }
 
 /**
- * Verifies a given PIN against the stored pairing PIN
+ * Verifies a given PIN against current PIN or previous PIN within 15s grace window
  */
-export function verifyPin(pin) {
+export function verifyPin(pin, now = Date.now()) {
   if (!pin) return false;
-  const store = loadStore();
   const cleanInput = String(pin).trim();
-  return cleanInput.length === 4 && cleanInput === store.pin;
+  if (cleanInput.length !== 4) return false;
+
+  const store = loadStore();
+  ensureRollingPin(store, now);
+
+  const currentExpiresTime = new Date(store.expiresAt).getTime();
+
+  // 1. Current valid PIN
+  if (cleanInput === store.currentPin && now < currentExpiresTime) {
+    return true;
+  }
+
+  // 2. 15-second grace period for immediately preceding PIN
+  if (store.previousPin && cleanInput === store.previousPin && store.previousExpiresAt) {
+    const prevExpiresTime = new Date(store.previousExpiresAt).getTime();
+    if (now < prevExpiresTime + PIN_GRACE_PERIOD_MS) {
+      logEvent('AUTH', `Accepted preceding PIN '${cleanInput}' within 15s grace period`);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -160,16 +283,14 @@ export function validateToken(token) {
   const store = loadStore();
   const device = store.devices.find((d) => d.tokenHash === tokenHash);
   if (device) {
-    // Update lastUsedAt asynchronously
     device.lastUsedAt = new Date().toISOString();
-    saveStore(store);
     return true;
   }
   return false;
 }
 
 /**
- * Checks if request is authenticated (either from localhost or valid token)
+ * Checks if request is authenticated (either from localhost or valid device token)
  */
 export function isAuthenticated(req) {
   if (isLocalhost(req)) return true;
@@ -178,17 +299,18 @@ export function isAuthenticated(req) {
 }
 
 /**
- * Pairs a new device after verifying the PIN
+ * Pairs a new device after verifying the PIN with 64-character SHA-256 token
  */
-export function pairDevice({ pin, deviceName, userAgent, ip, remember = true }) {
-  if (!verifyPin(pin)) {
+export function pairDevice({ pin, deviceName, userAgent, ip, remember = true }, now = Date.now()) {
+  if (!verifyPin(pin, now)) {
     return { success: false, error: 'Invalid pairing PIN' };
   }
 
+  // 64-character secure hexadecimal token (32 cryptographic bytes)
   const rawToken = crypto.randomBytes(32).toString('hex');
   const tokenHash = hashToken(rawToken);
   const deviceId = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
-  const now = new Date().toISOString();
+  const isoNow = new Date(now).toISOString();
 
   const store = loadStore();
   const newDevice = {
@@ -198,8 +320,9 @@ export function pairDevice({ pin, deviceName, userAgent, ip, remember = true }) 
     ip: ip || 'Remote',
     tokenHash,
     remember: Boolean(remember),
-    createdAt: now,
-    lastUsedAt: now,
+    createdAt: isoNow,
+    lastUsedAt: isoNow,
+    timestamp: isoNow,
   };
 
   store.devices.push(newDevice);
@@ -228,6 +351,7 @@ export function getTrustedDevices() {
     remember: d.remember,
     createdAt: d.createdAt,
     lastUsedAt: d.lastUsedAt,
+    timestamp: d.timestamp || d.createdAt,
   }));
 }
 
@@ -240,9 +364,23 @@ export function revokeDevice(id) {
   const initialLen = store.devices.length;
   store.devices = store.devices.filter((d) => d.id !== id);
   if (store.devices.length !== initialLen) {
+    store._revokedId = id;
     saveStore(store);
     logEvent('AUTH', `Revoked trusted device: ${id}`);
     return true;
   }
   return false;
+}
+
+/**
+ * Test helper to manually set internal rolling pin state
+ */
+export function _setRollingPinStateForTests({ currentPin, expiresAt, previousPin, previousExpiresAt }) {
+  const store = loadStore();
+  if (currentPin) store.currentPin = currentPin;
+  if (expiresAt) store.expiresAt = expiresAt;
+  if (previousPin !== undefined) store.previousPin = previousPin;
+  if (previousExpiresAt !== undefined) store.previousExpiresAt = previousExpiresAt;
+  store.pin = store.currentPin;
+  saveStore(store);
 }
