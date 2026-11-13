@@ -24,6 +24,7 @@
 
   <!-- Modular Stylesheets -->
   <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/theme.css">
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
@@ -767,11 +768,13 @@
   </div>
 
   <!-- =================================================================== -->
-  <!-- SETTINGS MODAL (macOS Grouped Rows)                                 -->
+  <!-- PREFERENCES MODAL (Apple Tabbed Dialog)                             -->
   <!-- =================================================================== -->
   <div class="modal-backdrop" id="settingsModal">
     <div class="modal-box settings-modal-box" role="dialog" aria-modal="true">
-      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 14px;">
+      
+      <!-- Modal Top Header -->
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 12px;">
         <div style="display: flex; align-items: center; gap: 12px;">
           <div class="brand-logo-group brand-logo-modal">
             <img src="/brand/icon-light.svg" class="brand-mark brand-mark-light" alt="AION" style="height: 28px; width: 28px;">
@@ -779,7 +782,7 @@
           </div>
           <div>
             <h2 class="modal-title" data-i18n="viewSettingsTitle">Preferences</h2>
-            <p class="modal-desc" data-i18n="viewSettingsSubtitle">Customize language, appearance, and developer options.</p>
+            <p class="modal-desc" data-i18n="viewSettingsSubtitle">Workstation profile, mesh security, API keys &amp; interface.</p>
           </div>
         </div>
         <button class="icon-btn" id="btnCloseSettings" type="button" aria-label="Close">
@@ -790,201 +793,356 @@
         </button>
       </div>
 
-      <!-- Group 1: Language Switcher -->
-      <div class="settings-group">
-        <div class="settings-group-title" data-i18n="sectionLanguage">Language</div>
-        <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;" data-i18n="sectionLanguageDesc">Choose your preferred language. The layout flips instantly between RTL and LTR.</p>
-        <div class="lang-segmented">
-          <button class="lang-btn active" data-lang="en" type="button">English</button>
-          <button class="lang-btn" data-lang="ar" type="button">العربية</button>
-          <button class="lang-btn" data-lang="de" type="button">Deutsch</button>
-        </div>
-      </div>
+      <!-- Segmented 4-Tab Navigation Header -->
+      <nav class="settings-tabs-nav" aria-label="Preferences Tabs">
+        <button class="settings-tab-btn active" data-settings-tab="general" type="button">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>General</span>
+        </button>
+        <button class="settings-tab-btn" data-settings-tab="network" type="button">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="20" height="8" rx="2"></rect>
+            <rect x="2" y="14" width="20" height="8" rx="2"></rect>
+            <line x1="6" y1="6" x2="6.01" y2="6"></line>
+            <line x1="6" y1="18" x2="6.01" y2="18"></line>
+          </svg>
+          <span>Network &amp; Access</span>
+        </button>
+        <button class="settings-tab-btn" data-settings-tab="vault" type="button">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span>API Vault &amp; Execution</span>
+        </button>
+        <button class="settings-tab-btn" data-settings-tab="interface" type="button">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <span>Interface</span>
+        </button>
+      </nav>
 
-      <!-- Group 2: Appearance & Theme Presets -->
-      <div class="settings-group">
-        <div class="settings-group-title" data-i18n="sectionAppearance">Appearance</div>
-        <div style="font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);" data-i18n="themePresets">Theme Presets</div>
-        <div class="theme-presets-grid" id="themePresetsGrid">
-          <!-- Dynamically populated by app.js -->
-        </div>
-
-        <div style="margin-top: 16px;">
-          <div style="font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);" data-i18n="customColorsTitle">Custom Palette Pickers</div>
-          <div class="color-pickers-row">
-            <div class="color-picker-item">
-              <span style="font-size: 12.5px; font-weight: 500;" data-i18n="colorBg">Background</span>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <input type="color" class="color-input-swatch" id="colorPickerBg" value="#141517">
-                <span class="color-hex-label" id="colorLabelBg">Default</span>
-              </div>
+      <!-- TAB 1: General & Device Profile -->
+      <div class="settings-tab-panel active" id="settingsPanel-general">
+        
+        <!-- Device Identity & Role -->
+        <div class="settings-group">
+          <div class="settings-group-title">Device Profile &amp; Role</div>
+          <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">
+            Identify this device on the local network and define its orchestration role.
+          </p>
+          <div style="display: grid; grid-template-columns: 1fr 140px; gap: 10px; align-items: end;">
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Device Friendly Name</label>
+              <input type="text" class="modal-input" id="settingsDeviceName" placeholder="Primary Workstation">
             </div>
-
-            <div class="color-picker-item">
-              <span style="font-size: 12.5px; font-weight: 500;" data-i18n="colorSurface">Cards &amp; Surfaces</span>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <input type="color" class="color-input-swatch" id="colorPickerSurface" value="#1e1f23">
-                <span class="color-hex-label" id="colorLabelSurface">Default</span>
-              </div>
-            </div>
-
-            <div class="color-picker-item">
-              <span style="font-size: 12.5px; font-weight: 500;" data-i18n="colorAccent">Accent Tint</span>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <input type="color" class="color-input-swatch" id="colorPickerAccent" value="#0a84ff">
-                <span class="color-hex-label" id="colorLabelAccent">Default</span>
-              </div>
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 12px; margin-bottom: 4px;">Role</label>
+              <select class="form-select" id="settingsDeviceRole">
+                <option value="Master">Master</option>
+                <option value="Node">Node</option>
+              </select>
             </div>
           </div>
-
-          <button class="reset-colors-btn" id="btnResetColors" type="button">
-            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <polyline points="1 20 1 14 7 14"></polyline>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-            <span data-i18n="resetColors">Reset to Theme Defaults</span>
+          <button class="btn-primary" id="btnSaveGeneralProfile" type="button" style="align-self: flex-start; margin-top: 6px; padding: 6px 14px; font-size: 12.5px;">
+            Save Profile
           </button>
         </div>
-      </div>
 
-      <!-- Group 3: Wake-on-LAN Status -->
-      <div class="settings-group">
-        <div class="settings-group-title" data-i18n="wolSectionTitle">Wake-on-LAN Status</div>
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
-          <span style="font-size: 13px; color: var(--text-secondary);">Adapter WoL Capability</span>
-          <span id="settingsWolStatusBadge" class="sidebar-badge" style="font-size: 12px; padding: 2px 8px;">Checking...</span>
-        </div>
-        <button class="btn-secondary" id="btnEnableWol" type="button" style="display: none; align-self: flex-start; margin-top: 6px; font-size: 12.5px;">
-          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
-            <line x1="12" y1="2" x2="12" y2="12"></line>
-          </svg>
-          <span data-i18n="btnEnableWol">Enable in Windows</span>
-        </button>
-      </div>
-
-      <!-- Group 4: System Updates (Accessible to all users) -->
-      <div class="settings-group">
-        <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;" data-i18n="devUpdatesTitle">System Updates</div>
-        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;" data-i18n="devUpdatesDesc">Check GitHub repository for updates and apply seamlessly.</p>
-        
-        <div class="updater-controls-row" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
-          <div class="updater-info" style="display: flex; align-items: center; gap: 8px;">
-            <span class="updater-version-tag" id="updaterVersionTag" style="font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; border-radius: var(--radius-xs); background: var(--surface-hover);">v1.0.0-beta.2</span>
-            <span class="updater-status-label" id="updateStatusLabel" data-i18n="upToDateMsg" style="font-size: 12.5px; color: var(--text-secondary);">Your system is up to date</span>
+        <!-- Wake-on-LAN Status -->
+        <div class="settings-group">
+          <div class="settings-group-title" data-i18n="wolSectionTitle">Wake-on-LAN Status</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
+            <span style="font-size: 13px; color: var(--text-secondary);">Network Adapter WoL Capability</span>
+            <span id="settingsWolStatusBadge" class="sidebar-badge" style="font-size: 12px; padding: 2px 8px;">Checking...</span>
           </div>
-          <div class="updater-btns" style="display: flex; gap: 8px;">
-            <button class="btn-secondary" id="btnCheckUpdates" type="button" style="padding: 6px 14px; font-size: 12px;">
+          <button class="btn-secondary" id="btnEnableWol" type="button" style="display: none; align-self: flex-start; margin-top: 6px; font-size: 12.5px;">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+              <line x1="12" y1="2" x2="12" y2="12"></line>
+            </svg>
+            <span data-i18n="btnEnableWol">Enable in Windows</span>
+          </button>
+        </div>
+
+        <!-- System Updates -->
+        <div class="settings-group">
+          <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;" data-i18n="devUpdatesTitle">System Updates</div>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;" data-i18n="devUpdatesDesc">Seamless in-place updates from GitHub.</p>
+          <div class="updater-controls-row" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div class="updater-info" style="display: flex; align-items: center; gap: 8px;">
+              <span class="updater-version-tag" id="updaterVersionTag" style="font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; border-radius: var(--radius-xs); background: var(--surface-hover);">v1.0.0-beta.2</span>
+              <span class="updater-status-label" id="updateStatusLabel" data-i18n="upToDateMsg" style="font-size: 12.5px; color: var(--text-secondary);">Your system is up to date</span>
+            </div>
+            <div class="updater-btns" style="display: flex; gap: 8px;">
+              <button class="btn-secondary" id="btnCheckUpdates" type="button" style="padding: 6px 14px; font-size: 12px;">
+                <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <polyline points="1 20 1 14 7 14"></polyline>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                <span data-i18n="btnCheckUpdates">Check for Updates</span>
+              </button>
+              <button class="btn-primary" id="btnApplyUpdate" type="button" style="display: none; padding: 6px 14px; font-size: 12px;">
+                <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span data-i18n="btnApplyUpdate">Install Update</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB 2: Network & Access -->
+      <div class="settings-tab-panel" id="settingsPanel-network">
+        
+        <!-- Tailscale Mesh Network Status -->
+        <div class="settings-group">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="settings-group-title">Tailscale Mesh Network</div>
+            <span id="settingsTailscaleStatusBadge" class="sidebar-badge" style="font-size: 11px; padding: 2px 8px;">Checking...</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-top: 4px;">
+            <div style="padding: 8px 12px; background: var(--surface-hover); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+              <div style="font-size: 11px; color: var(--text-tertiary); text-transform: uppercase;">Tailscale IPv4</div>
+              <div id="settingsTailscaleIpv4" style="font-size: 12.5px; font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">Checking...</div>
+            </div>
+            <div style="padding: 8px 12px; background: var(--surface-hover); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+              <div style="font-size: 11px; color: var(--text-tertiary); text-transform: uppercase;">Tailscale IPv6</div>
+              <div id="settingsTailscaleIpv6" style="font-size: 12.5px; font-family: var(--font-mono); color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Checking...</div>
+            </div>
+            <div style="padding: 8px 12px; background: var(--surface-hover); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+              <div style="font-size: 11px; color: var(--text-tertiary); text-transform: uppercase;">Mesh Hostname</div>
+              <div id="settingsTailscaleHost" style="font-size: 12.5px; font-family: var(--font-mono); color: var(--text-primary); font-weight: 500;">localhost</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Visual Rolling PIN Authenticator -->
+        <div class="settings-group">
+          <div class="settings-group-title">Rolling PIN Authenticator</div>
+          <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">
+            Cycles every 120 seconds with a 15-second grace window to authenticate remote mobile and tablet devices.
+          </p>
+
+          <div class="rolling-pin-card">
+            <div class="rolling-pin-top">
+              <div>
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: 600;">Current Rolling PIN</div>
+                <div class="rolling-pin-display" id="settingsPairingPin">----</div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn-secondary" id="btnRegeneratePin" type="button" style="padding: 6px 12px; font-size: 12px;">Regenerate</button>
+                <a href="/api/ios/profile.mobileconfig?theme=dark" class="btn-secondary" id="btnDownloadIosProfile" style="padding: 6px 12px; font-size: 12px; text-decoration: none;">iOS WebClip</a>
+              </div>
+            </div>
+
+            <!-- Animated Visual Countdown Progress Bar -->
+            <div class="rolling-pin-bar">
+              <div class="rolling-pin-progress" id="pinProgressBar" style="width: 100%;"></div>
+            </div>
+
+            <div class="rolling-pin-meta">
+              <span>Automatic 120s rolling cycle with 15s grace</span>
+              <span id="pinCountdownText" style="font-family: var(--font-mono); font-weight: 600; color: var(--accent);">Cycles in 120s</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trusted & Remembered Devices -->
+        <div class="settings-group">
+          <div class="settings-group-title">Trusted Devices &amp; Tokens</div>
+          <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">
+            Authorized remote nodes holding 64-character persistent tokens. Revoke immediately to disconnect.
+          </p>
+          <div class="trusted-devices-list" id="trustedDevicesList">
+            <!-- Populated dynamically via GET /api/auth/devices -->
+            <div style="font-size: 12px; color: var(--text-tertiary);">Loading trusted devices...</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB 3: API Vault & Execution -->
+      <div class="settings-tab-panel" id="settingsPanel-vault">
+        
+        <!-- API Vault Key Manager -->
+        <div class="settings-group">
+          <div class="settings-group-title">API Vault &amp; Provider Keys</div>
+          <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">
+            Securely stored in your browser's private vault for agentic synthesis and zero-delay execution.
+          </p>
+          <div class="api-vault-list" id="apiVaultList">
+            <!-- Populated dynamically by settings.js -->
+          </div>
+        </div>
+
+        <!-- Bring-Your-Own-CLI (BYOCLI) Profiles -->
+        <div class="settings-group">
+          <div class="settings-group-title">Bring-Your-Own-CLI (BYOCLI) Profiles</div>
+          <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">
+            Supervise external CLI runtimes and autonomous coding agents with configurable sandbox permissions.
+          </p>
+          <div class="byocli-grid" id="byocliGrid">
+            <!-- Populated dynamically by settings.js -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB 4: Interface -->
+      <div class="settings-tab-panel" id="settingsPanel-interface">
+        
+        <!-- Theme Mode: Light / Dark / Auto -->
+        <div class="settings-group">
+          <div class="settings-group-title">Interface Mode</div>
+          <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">Select light, dark, or automatic system appearance.</p>
+          <div class="lang-segmented" style="max-width: 320px;">
+            <button class="lang-btn theme-mode-btn" data-theme-mode="light" type="button">Light</button>
+            <button class="lang-btn theme-mode-btn active" data-theme-mode="dark" type="button">Dark</button>
+            <button class="lang-btn theme-mode-btn" data-theme-mode="auto" type="button">Auto (System)</button>
+          </div>
+        </div>
+
+        <!-- Language Switcher -->
+        <div class="settings-group">
+          <div class="settings-group-title" data-i18n="sectionLanguage">Language</div>
+          <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;" data-i18n="sectionLanguageDesc">Choose your preferred language. The layout flips instantly between RTL and LTR.</p>
+          <div class="lang-segmented" style="max-width: 320px;">
+            <button class="lang-btn active" data-lang="en" type="button">English</button>
+            <button class="lang-btn" data-lang="ar" type="button">العربية</button>
+            <button class="lang-btn" data-lang="de" type="button">Deutsch</button>
+          </div>
+        </div>
+
+        <!-- Theme Presets Grid -->
+        <div class="settings-group">
+          <div class="settings-group-title" data-i18n="sectionAppearance">Theme Presets</div>
+          <div class="theme-presets-grid" id="themePresetsGrid">
+            <!-- Dynamically populated by app.js -->
+          </div>
+
+          <div style="margin-top: 16px;">
+            <div style="font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);" data-i18n="customColorsTitle">Custom Palette Pickers</div>
+            <div class="color-pickers-row">
+              <div class="color-picker-item">
+                <span style="font-size: 12.5px; font-weight: 500;" data-i18n="colorBg">Background</span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input type="color" class="color-input-swatch" id="colorPickerBg" value="#141517">
+                  <span class="color-hex-label" id="colorLabelBg">Default</span>
+                </div>
+              </div>
+
+              <div class="color-picker-item">
+                <span style="font-size: 12.5px; font-weight: 500;" data-i18n="colorSurface">Cards &amp; Surfaces</span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input type="color" class="color-input-swatch" id="colorPickerSurface" value="#1e1f23">
+                  <span class="color-hex-label" id="colorLabelSurface">Default</span>
+                </div>
+              </div>
+
+              <div class="color-picker-item">
+                <span style="font-size: 12.5px; font-weight: 500;" data-i18n="colorAccent">Accent Tint</span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input type="color" class="color-input-swatch" id="colorPickerAccent" value="#0a84ff">
+                  <span class="color-hex-label" id="colorLabelAccent">Default</span>
+                </div>
+              </div>
+            </div>
+
+            <button class="reset-colors-btn" id="btnResetColors" type="button">
               <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="23 4 23 10 17 10"></polyline>
                 <polyline points="1 20 1 14 7 14"></polyline>
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
               </svg>
-              <span data-i18n="btnCheckUpdates">Check for Updates</span>
-            </button>
-            <button class="btn-primary" id="btnApplyUpdate" type="button" style="display: none; padding: 6px 14px; font-size: 12px;">
-              <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              <span data-i18n="btnApplyUpdate">Install Update</span>
+              <span data-i18n="resetColors">Reset to Theme Defaults</span>
             </button>
           </div>
         </div>
-      </div>
 
-      <!-- Group 5: Pairing & Trusted Devices -->
-      <div class="settings-group">
-        <div class="settings-group-title" data-i18n="sectionPairing">Pairing &amp; Trusted Devices</div>
-        <p class="settings-section-desc" data-i18n="pairingPinDesc">
-          Use this 4-digit PIN to pair phones, tablets, and remote workstations to this computer.
-        </p>
-
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--surface-translucent); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); margin-bottom: 12px;">
-          <div>
-            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: 600;">Active Pairing PIN</div>
-            <div id="settingsPairingPin" style="font-size: 24px; font-weight: 700; color: var(--accent); letter-spacing: 4px;">----</div>
-          </div>
-          <div style="display: flex; gap: 8px;">
-            <button class="btn-secondary" id="btnRegeneratePin" type="button" style="padding: 6px 12px; font-size: 12px;" data-i18n="btnRegeneratePin">Regenerate PIN</button>
-            <a href="/api/ios/profile.mobileconfig?theme=dark" class="btn-secondary" id="btnDownloadIosProfile" style="padding: 6px 12px; font-size: 12px; text-decoration: none;" data-i18n="btnDownloadWebClip">iOS Profile</a>
-          </div>
-        </div>
-
-        <div>
-          <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;" data-i18n="trustedDevicesTitle">Remembered Devices</div>
-          <div id="trustedDevicesList" style="display: flex; flex-direction: column; gap: 6px;">
-            <div style="font-size: 12px; color: var(--text-tertiary);" data-i18n="trustedDevicesEmpty">No remote devices paired yet.</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Group 6: Developer Mode Toggle & Hidden Diagnostics -->
-      <div class="settings-group">
-        <div class="toggle-wrapper">
-          <div>
-            <div class="settings-group-title" data-i18n="sectionDeveloper">Developer Mode</div>
-            <p class="settings-section-desc" style="margin-bottom: 0; font-size: 12.5px;" data-i18n="sectionDeveloperDesc">
-              When enabled, reveals the live event stream drawer and technical node telemetry.
-            </p>
-          </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="devModeToggle">
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <!-- Revealed Developer Mode Container -->
-        <div class="dev-mode-container" id="devModeContainer">
-          
-          <!-- Node Diagnostics Telemetry -->
-          <div style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
-            <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;" data-i18n="devNodeMetaTitle">Node Telemetry &amp; Architecture</div>
-            <div class="node-meta-grid">
-              <div class="node-meta-tile">
-                <div class="node-meta-title" data-i18n="devMetaNodeVersion">Node Version</div>
-                <div class="node-meta-value">v20+ Native</div>
-              </div>
-              <div class="node-meta-tile">
-                <div class="node-meta-title" data-i18n="devMetaPlatform">Platform OS</div>
-                <div class="node-meta-value">Localhost</div>
-              </div>
-              <div class="node-meta-tile">
-                <div class="node-meta-title" data-i18n="devMetaPort">Port</div>
-                <div class="node-meta-value">5050</div>
-              </div>
-              <div class="node-meta-tile">
-                <div class="node-meta-title" data-i18n="devMetaMemory">RAM Footprint</div>
-                <div class="node-meta-value">&lt; 50 MB</div>
-              </div>
+        <!-- Developer Mode Toggle & SSE Event Logs -->
+        <div class="settings-group">
+          <div class="toggle-wrapper">
+            <div>
+              <div class="settings-group-title" data-i18n="sectionDeveloper">Developer Mode</div>
+              <p class="settings-section-desc" style="margin-bottom: 0; font-size: 12.5px;" data-i18n="sectionDeveloperDesc">
+                When enabled, reveals node architecture diagnostics and the live event stream drawer.
+              </p>
             </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="devModeToggle">
+              <span class="toggle-slider"></span>
+            </label>
           </div>
 
-          <!-- Live SSE Console Drawer -->
-          <div style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
-            <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;" data-i18n="devConsoleTitle">Live Event Stream (SSE)</div>
-            <div class="dev-console-drawer">
-              <div class="dev-console-toolbar">
-                <div class="dev-console-filters">
-                  <button class="dev-filter-pill active" data-filter="ALL" type="button">ALL</button>
-                  <button class="dev-filter-pill" data-filter="INFO" type="button">INFO</button>
-                  <button class="dev-filter-pill" data-filter="COMMAND" type="button">COMMAND</button>
-                  <button class="dev-filter-pill" data-filter="ERROR" type="button">ERROR</button>
-                  <button class="dev-filter-pill" data-filter="SYSTEM" type="button">SYSTEM</button>
+          <!-- Revealed Developer Mode Container -->
+          <div class="dev-mode-container" id="devModeContainer">
+            
+            <!-- Node Diagnostics Telemetry -->
+            <div style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;" data-i18n="devNodeMetaTitle">Node Telemetry &amp; Architecture</div>
+              <div class="node-meta-grid">
+                <div class="node-meta-tile">
+                  <div class="node-meta-title" data-i18n="devMetaNodeVersion">Node Version</div>
+                  <div class="node-meta-value">v20+ Native</div>
                 </div>
-                <div class="dev-console-actions">
-                  <button class="dev-console-btn" id="devClearLogsBtn" type="button" data-i18n="devClearLogs" style="font-size: 11px; padding: 2px 8px;">Clear Logs</button>
+                <div class="node-meta-tile">
+                  <div class="node-meta-title" data-i18n="devMetaPlatform">Platform OS</div>
+                  <div class="node-meta-value">Localhost</div>
+                </div>
+                <div class="node-meta-tile">
+                  <div class="node-meta-title" data-i18n="devMetaPort">Port</div>
+                  <div class="node-meta-value">5050</div>
+                </div>
+                <div class="node-meta-tile">
+                  <div class="node-meta-title" data-i18n="devMetaMemory">RAM Footprint</div>
+                  <div class="node-meta-value">&lt; 50 MB</div>
                 </div>
               </div>
-              <div class="dev-console-logs" id="devConsoleLogs">
-                <!-- Populated dynamically via EventSource /api/logs -->
+            </div>
+
+            <!-- Live SSE Console Drawer -->
+            <div style="padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;" data-i18n="devConsoleTitle">Live Event Stream (SSE)</div>
+              <div class="dev-console-drawer">
+                <div class="dev-console-toolbar">
+                  <div class="dev-console-filters">
+                    <button class="dev-filter-pill active" data-filter="ALL" type="button">ALL</button>
+                    <button class="dev-filter-pill" data-filter="INFO" type="button">INFO</button>
+                    <button class="dev-filter-pill" data-filter="COMMAND" type="button">COMMAND</button>
+                    <button class="dev-filter-pill" data-filter="ERROR" type="button">ERROR</button>
+                    <button class="dev-filter-pill" data-filter="SYSTEM" type="button">SYSTEM</button>
+                  </div>
+                  <div class="dev-console-actions">
+                    <button class="dev-console-btn" id="devClearLogsBtn" type="button" data-i18n="devClearLogs" style="font-size: 11px; padding: 2px 8px;">Clear Logs</button>
+                  </div>
+                </div>
+                <div class="dev-console-logs" id="devConsoleLogs">
+                  <!-- Populated dynamically via EventSource /api/logs -->
+                </div>
               </div>
             </div>
-          </div>
 
+          </div>
         </div>
+
       </div>
 
     </div>
@@ -1147,7 +1305,9 @@
   <!-- Floating Toast Notifications Container -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <!-- Modular ES6 Application Script -->
+  <!-- Modular ES6 Application Scripts -->
+  <script type="module" src="/js/nav.js"></script>
+  <script type="module" src="/js/settings.js"></script>
   <script type="module" src="/js/app.js"></script>
 
   <!-- PWA Offline Service Worker Registration -->

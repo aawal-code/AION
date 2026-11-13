@@ -49,8 +49,8 @@ const state = {
   },
   nodeMeta: {
     nodeVersion: 'Node.js v20+',
-    platform: navigator.userAgent.includes('Win') ? 'Windows' : 'Linux / Unix',
-    port: window.location.port || '5050',
+    platform: typeof navigator !== 'undefined' && navigator.userAgent.includes('Win') ? 'Windows' : 'Linux / Unix',
+    port: (typeof window !== 'undefined' && window.location?.port) || '5050',
     memory: '~32 MB',
     uptime: 'Active',
   },

@@ -256,6 +256,9 @@ describe('Milestone 1: The Core Backend & Zero-AI Router', () => {
     });
 
     test('routes user-specified core phrases across EN, DE, AR, and Arabizi in <10ms', async () => {
+      // Warm up JIT execution to ensure fair latency measurement
+      await handleLocalCommand('warmup', { dryRun: true });
+
       const testCases = [
         { prompt: 'mute', expectedAction: 'mute', category: 'media' },
         { prompt: 'shh', expectedAction: 'mute', category: 'media' },

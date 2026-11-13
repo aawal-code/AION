@@ -35,6 +35,8 @@ import {
 import { getSvgIcon } from './icons.js';
 import { initDevicesModule, fetchRunningProcesses, renderDevicesView, selectDevice } from './devices.js';
 import { initMediaModule } from './media.js';
+import { initNav } from './nav.js';
+import { initSettings } from './settings.js';
 
 // ==========================================================================
 // Service Worker Live Controller Reload (Mobile / Desktop PWA Auto-Refresh)
@@ -64,6 +66,10 @@ export function showToast(message, iconName = 'check') {
     toast.style.transition = 'all 0.25s var(--ease-spring)';
     setTimeout(() => toast.remove(), 260);
   }, 3200);
+}
+
+if (typeof window !== 'undefined') {
+  window.aionShowToast = showToast;
 }
 
 // ==========================================================================
@@ -1227,6 +1233,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPairingSettingsControls();
 
   // 2. Navigation & Settings Modal
+  initNav();
+  initSettings();
   setupNavigation();
   setupSettingsModal();
 

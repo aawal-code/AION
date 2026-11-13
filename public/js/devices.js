@@ -214,6 +214,10 @@ export function selectDevice(id) {
   closeMobileSidebar();
 }
 
+if (typeof window !== 'undefined') {
+  window.aionSelectDevice = selectDevice;
+}
+
 function getSelectedDevice() {
   return cachedDevices.find((d) => d.id === selectedDeviceId) || cachedDevices[0] || null;
 }
