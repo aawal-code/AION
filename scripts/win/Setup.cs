@@ -977,7 +977,6 @@ namespace AION.Installer
 
         private void ConfigureSystemIntegrations(string targetDir, string nodeExe, bool installedNode, bool installedTailscale, bool installedRustDesk, bool enableStartup, bool enableShortcuts)
         {
-            string manifestPath = Path.Combine(targetDir, "install-manifest.json");
             string manifestJson = string.Format(
                 "{{\r\n" +
                 "  \"version\": \"{0}\",\r\n" +
@@ -998,6 +997,12 @@ namespace AION.Installer
                 enableShortcuts ? "true" : "false",
                 enableStartup ? "true" : "false"
             );
+            string dataDir = Path.Combine(targetDir, "data");
+            Directory.CreateDirectory(dataDir);
+            string dataManifestPath = Path.Combine(dataDir, "install-manifest.json");
+            File.WriteAllText(dataManifestPath, manifestJson, Encoding.UTF8);
+
+            string manifestPath = Path.Combine(targetDir, "install-manifest.json");
             File.WriteAllText(manifestPath, manifestJson, Encoding.UTF8);
 
             RunCommand("schtasks.exe", "/end /tn AionDaemon");

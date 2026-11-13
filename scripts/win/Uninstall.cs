@@ -101,7 +101,11 @@ namespace AION.Installer
 
         private void ReadInstallManifest()
         {
-            string manifestPath = Path.Combine(installDir, "install-manifest.json");
+            string manifestPath = Path.Combine(installDir, "data", "install-manifest.json");
+            if (!File.Exists(manifestPath))
+            {
+                manifestPath = Path.Combine(installDir, "install-manifest.json");
+            }
             if (File.Exists(manifestPath))
             {
                 try

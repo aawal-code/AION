@@ -332,7 +332,7 @@ namespace AION.Desktop
                 await webView.EnsureCoreWebView2Async(env);
 
                 webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
-                webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+                webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                 webView.CoreWebView2.Settings.AreDevToolsEnabled = true;
 
                 NavigateToApp();
