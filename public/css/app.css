@@ -524,6 +524,32 @@ html[dir="rtl"] .icon-directional {
   border-color: rgba(48, 209, 88, 0.2);
 }
 
+.device-connection-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.15s;
+}
+
+.device-connection-badge.mesh {
+  background: var(--color-accent-subtle);
+  color: var(--accent);
+  border-color: rgba(10, 132, 255, 0.25);
+}
+
+.device-connection-badge.lan {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+  border-color: rgba(48, 209, 88, 0.25);
+}
+
 .device-edit-btn {
   width: 28px;
   height: 28px;
@@ -933,6 +959,16 @@ html[dir="rtl"] .icon-directional {
   background: var(--accent-subtle);
 }
 
+.app-cpu-badge {
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--color-warning, #f59e0b);
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(245, 158, 11, 0.12);
+}
+
 .app-quit-btn {
   font-size: 12px;
   font-weight: 600;
@@ -961,6 +997,262 @@ html[dir="rtl"] .icon-directional {
 
 .btn-subtle:hover {
   background: var(--surface-hover);
+}
+
+/* App Manager Simple vs Advanced Mode Segmented Control */
+.app-mode-segmented {
+  display: inline-flex;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  gap: 2px;
+}
+
+.app-mode-btn {
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.app-mode-btn.active {
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.app-kill-btn {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  color: var(--color-danger);
+  background: var(--color-danger-subtle);
+  border: 1px solid rgba(255, 69, 58, 0.2);
+  cursor: pointer;
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.15s, color 0.15s;
+}
+
+.app-kill-btn:hover {
+  background: var(--color-danger);
+  color: #ffffff;
+}
+
+.app-row.removing {
+  opacity: 0 !important;
+  transform: translateX(28px) !important;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   1-Click Mobile Setup Card (Collapsible Onboarding)
+   ========================================================================== */
+
+.mobile-setup-card {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  margin-bottom: 20px;
+  background: var(--surface-translucent);
+  border: 1px solid var(--border-subtle);
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mobile-setup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mobile-setup-title-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mobile-setup-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-subtle);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.mobile-setup-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mobile-setup-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.mobile-setup-body {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mobile-setup-card.collapsed .mobile-setup-body {
+  display: none;
+}
+
+.chevron-icon {
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mobile-setup-card.collapsed .chevron-icon,
+.mobile-setup-card.collapsed #mobileSetupChevron {
+  transform: rotate(-90deg);
+}
+
+.mobile-setup-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ==========================================================================
+   Local Telemetry Deck (CPU, RAM, Disk Metrics)
+   ========================================================================== */
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.telemetry-card {
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface-translucent);
+  border: 1px solid var(--border-subtle);
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.telemetry-card:hover {
+  background: var(--surface-hover);
+}
+
+.telemetry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.telemetry-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.telemetry-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-active);
+  color: var(--text-secondary);
+}
+
+.telemetry-main-val {
+  font-size: 26px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.telemetry-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: var(--surface-hover);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+.telemetry-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  transition: width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.telemetry-meta {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* ==========================================================================
+   Remote View Action Row (View Screen & Test WoL)
+   ========================================================================== */
+
+.remote-actions-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.remote-action-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface-translucent);
+  border: 1px solid var(--border-subtle);
+  text-align: start;
+  cursor: pointer;
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.15s;
+}
+
+.remote-action-card:hover {
+  background: var(--surface-hover);
+  transform: translateY(-2px);
+}
+
+.remote-action-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-subtle);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.remote-action-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.remote-action-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
 }
 
 /* ==========================================================================

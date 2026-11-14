@@ -151,6 +151,15 @@
             </div>
 
             <div class="device-hero-actions">
+              <span class="device-connection-badge lan" id="canvasConnectionBadge">
+                <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                  <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                  <line x1="12" y1="20" x2="12.01" y2="20"></line>
+                </svg>
+                <span id="canvasConnectionText">LAN</span>
+              </span>
               <span class="device-status-pill online" id="canvasDeviceStatusPill">
                 <span class="status-dot"></span>
                 <span id="canvasDeviceStatusText" data-i18n="statusConnected">Connected</span>
@@ -172,6 +181,137 @@
               </button>
             </div>
           </div>
+
+          <!-- 1-Click Mobile Setup Card (Collapsible Onboarding) -->
+          <div class="mobile-setup-card glass-card" id="mobileSetupCard">
+            <div class="mobile-setup-header">
+              <div class="mobile-setup-title-box">
+                <span class="mobile-setup-icon">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                    <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                  </svg>
+                </span>
+                <div>
+                  <div class="mobile-setup-title">Pair iPhone or Companion Node</div>
+                  <div class="mobile-setup-desc">1-click background notifications and native iOS WebClip Runner</div>
+                </div>
+              </div>
+              <div class="mobile-setup-actions-right">
+                <button class="btn-subtle" id="btnToggleMobileSetup" type="button" aria-label="Toggle Card">
+                  <svg class="icon icon-sm chevron-icon" id="mobileSetupChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="mobile-setup-body" id="mobileSetupBody">
+              <div class="mobile-setup-buttons">
+                <button class="btn-secondary" id="btnEnablePushNotifications" type="button">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                  </svg>
+                  <span>Enable Push Notifications</span>
+                </button>
+                <a href="/api/ios/profile.mobileconfig?theme=dark" class="btn-primary" id="btnInstallAionRunner" style="text-decoration: none;">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  <span>Install AION Runner</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Local Telemetry Deck (Rendered for Local Host Machine) -->
+          <section class="canvas-section" id="localTelemetrySection" style="display: none;">
+            <div class="section-heading-row">
+              <div class="section-heading">Local Telemetry Deck</div>
+              <button class="btn-subtle" id="btnRefreshLocalTelemetry" type="button" title="Refresh Live Telemetry">
+                <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <polyline points="1 20 1 14 7 14"></polyline>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+              </button>
+            </div>
+            
+            <div class="telemetry-grid">
+              <!-- CPU Card -->
+              <div class="glass-card telemetry-card">
+                <div class="telemetry-header">
+                  <span class="telemetry-title">CPU Utilization</span>
+                  <span class="telemetry-pill" id="telemCpuPill">Active</span>
+                </div>
+                <div class="telemetry-main-val" id="telemCpuVal">0%</div>
+                <div class="telemetry-bar-wrap">
+                  <div class="telemetry-bar-fill" id="telemCpuBar" style="width: 0%;"></div>
+                </div>
+                <div class="telemetry-meta" id="telemCpuMeta">Multi-Core Native Engine</div>
+              </div>
+
+              <!-- Memory Card -->
+              <div class="glass-card telemetry-card">
+                <div class="telemetry-header">
+                  <span class="telemetry-title">System Memory</span>
+                  <span class="telemetry-pill" id="telemMemPill">RAM</span>
+                </div>
+                <div class="telemetry-main-val" id="telemMemVal">0 GB / 0 GB</div>
+                <div class="telemetry-bar-wrap">
+                  <div class="telemetry-bar-fill" id="telemMemBar" style="width: 0%;"></div>
+                </div>
+                <div class="telemetry-meta" id="telemMemMeta">Available: -- GB</div>
+              </div>
+
+              <!-- Storage & I/O Card -->
+              <div class="glass-card telemetry-card">
+                <div class="telemetry-header">
+                  <span class="telemetry-title">Storage &amp; I/O</span>
+                  <span class="telemetry-pill" id="telemDiskPill">Disk</span>
+                </div>
+                <div class="telemetry-main-val" id="telemDiskVal">0 GB / 0 GB</div>
+                <div class="telemetry-bar-wrap">
+                  <div class="telemetry-bar-fill" id="telemDiskBar" style="width: 0%;"></div>
+                </div>
+                <div class="telemetry-meta" id="telemDiskMeta">Read: 0 MB/s &bull; Write: 0 MB/s</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Remote View Action Row (View Screen & Test WoL) -->
+          <section class="canvas-section" id="remoteActionsSection" style="display: none;">
+            <div class="section-heading">Remote Quick Actions</div>
+            <div class="remote-actions-row">
+              <button class="remote-action-card" id="btnRemoteViewScreen" type="button">
+                <div class="remote-action-icon">
+                  <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                  </svg>
+                </div>
+                <div class="remote-action-content">
+                  <div class="remote-action-title">View Screen (RustDesk)</div>
+                  <div class="remote-action-desc">Direct low-latency hardware desktop stream</div>
+                </div>
+              </button>
+              <button class="remote-action-card" id="btnRemoteTestWol" type="button">
+                <div class="remote-action-icon">
+                  <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                    <line x1="12" y1="2" x2="12" y2="12"></line>
+                  </svg>
+                </div>
+                <div class="remote-action-content">
+                  <div class="remote-action-title">Test WoL Magic Packet</div>
+                  <div class="remote-action-desc">Broadcast UDP Wake-on-LAN packet to MAC</div>
+                </div>
+              </button>
+            </div>
+          </section>
 
           <!-- Section 1: Power & Display (4 Equal-Width Tactile Tiles) -->
           <section class="canvas-section" id="desktopPowerSection">
@@ -322,11 +462,27 @@
             </div>
           </section>
 
-          <!-- Section 3: Running Apps (Clean Borderless Rows) -->
+          <!-- Section 3: Clean Running Apps Manager -->
           <section class="canvas-section" id="desktopAppsSection">
             <div class="section-heading-row">
-              <div class="section-heading" data-i18n="runningAppsTitle">Running Applications</div>
-              <button class="btn-subtle" id="btnToggleAllProcesses" type="button" style="display: none;">Show all</button>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="section-heading" data-i18n="runningAppsTitle">Running Applications</div>
+                <span class="sidebar-badge" id="appsCountBadge" style="font-size: 11px;">0 apps</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <div class="app-mode-segmented">
+                  <button class="app-mode-btn active" id="btnAppModeSimple" type="button">Simple</button>
+                  <button class="app-mode-btn" id="btnAppModeAdvanced" type="button">Advanced</button>
+                </div>
+                <button class="btn-subtle" id="btnRefreshProcesses" type="button" title="Refresh Apps">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                </button>
+                <button class="btn-subtle" id="btnToggleAllProcesses" type="button" style="display: none;">Show all</button>
+              </div>
             </div>
             <div class="running-apps-list" id="canvasProcessesList">
               <!-- Populated dynamically by devices.js -->

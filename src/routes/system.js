@@ -46,7 +46,14 @@ export function sendJson(res, statusCode, data) {
  */
 export async function handleGetApps(req, res) {
   try {
-    const apps = await getGroupedApps();
+    const rawApps = await getGroupedApps();
+    const apps = rawApps.map((a) => ({
+      ...a,
+      processName: a.processName || a.executable,
+      pidCount: a.pidCount || a.count || (a.pids ? a.pids.length : 1),
+      memoryMb: a.memoryMb !== undefined ? a.memoryMb : a.totalMemoryMb,
+      cpuPercent: a.cpuPercent !== undefined ? a.cpuPercent : a.totalCpu,
+    }));
     return sendJson(res, 200, {
       status: 'ok',
       count: apps.length,
@@ -101,12 +108,32 @@ export async function handleKillApp(req, res) {
 export async function handleGetTelemetry(req, res) {
   try {
     const telemetry = await getSystemTelemetry();
+    const drive = telemetry.disk?.drive || {};
+    const normCpu = {
+      ...telemetry.cpu,
+      percent: telemetry.cpu?.percent ?? telemetry.cpu?.usagePercent ?? 0,
+    };
+    const normMem = {
+      ...telemetry.memory,
+      freeMb: telemetry.memory?.freeMb ?? telemetry.memory?.availableMb ?? 0,
+      percent: telemetry.memory?.percent ?? telemetry.memory?.usedPercent ?? 0,
+    };
+    const normDisk = {
+      ...telemetry.disk,
+      totalGb: drive.totalGb ?? 0,
+      freeGb: drive.freeGb ?? 0,
+      usedGb: drive.usedGb ?? 0,
+      percent: drive.usedPercent ?? telemetry.disk?.percentDiskTime ?? 0,
+      readSec: telemetry.disk?.readFormatted || '0 MB/s',
+      writeSec: telemetry.disk?.writeFormatted || '0 MB/s',
+    };
+
     return sendJson(res, 200, {
       status: 'ok',
       telemetry,
-      cpu: telemetry.cpu,
-      memory: telemetry.memory,
-      disk: telemetry.disk,
+      cpu: normCpu,
+      memory: normMem,
+      disk: normDisk,
       uptimeSeconds: telemetry.uptimeSeconds,
       timestamp: telemetry.timestamp,
     });

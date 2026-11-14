@@ -1221,66 +1221,140 @@ function setupPairingSettingsControls() {
 }
 
 // ==========================================================================
+// 1-Click Mobile Setup Card Controller
+// ==========================================================================
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+export function setupMobileOnboardingCard() {
+  const card = document.getElementById('mobileSetupCard');
+  const toggleBtn = document.getElementById('btnToggleMobileSetup');
+  const pushBtn = document.getElementById('btnEnablePushNotifications');
+  if (!card) return;
+
+  const isCollapsed = localStorage.getItem('aion_mobile_setup_collapsed') === 'true';
+  if (isCollapsed) {
+    card.classList.add('collapsed');
+  }
+
+  toggleBtn?.addEventListener('click', () => {
+    const collapsed = card.classList.toggle('collapsed');
+    localStorage.setItem('aion_mobile_setup_collapsed', String(collapsed));
+  });
+
+  pushBtn?.addEventListener('click', async () => {
+    await enableMobilePushNotifications();
+  });
+}
+
+export async function enableMobilePushNotifications() {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      showToast('Push notifications not supported on this browser', 'alert');
+      return false;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      showToast('Push permission denied', 'alert');
+      return false;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const keyRes = await fetch('/api/push/vapid-public-key');
+    const keyData = await keyRes.json();
+    if (!keyData.publicKey) {
+      showToast('Failed to retrieve VAPID key', 'alert');
+      return false;
+    }
+    const appKey = urlBase64ToUint8Array(keyData.publicKey);
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: appKey,
+    });
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription: sub }),
+    });
+    showToast('Web Push successfully enabled!', 'check');
+    return true;
+  } catch (err) {
+    showToast(`Push activation error: ${err.message}`, 'alert');
+    return false;
+  }
+}
+
+// ==========================================================================
 // App Master Initialization
 // ==========================================================================
-document.addEventListener('DOMContentLoaded', () => {
-  // 1. Language & State
-  initLanguage();
-  initState();
+if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', () => {
+    // 1. Language & State
+    initLanguage();
+    initState();
 
-  // Check Auth & Setup Pairing
-  checkAuthStatus();
-  setupPairingSettingsControls();
+    // Check Auth & Setup Pairing
+    checkAuthStatus();
+    setupPairingSettingsControls();
+    setupMobileOnboardingCard();
 
-  // 2. Navigation & Settings Modal
-  initNav();
-  initSettings();
-  setupNavigation();
-  setupSettingsModal();
+    // 2. Navigation & Settings Modal
+    initNav();
+    initSettings();
+    setupNavigation();
+    setupSettingsModal();
 
-  // 3. Workstation Quick Actions
-  setupWorkstationActions();
+    // 3. Workstation Quick Actions
+    setupWorkstationActions();
 
-  // 4. Activity Feed & Chat
-  const state = getState();
-  renderActivityFeed(state.activityFeed);
-  renderChatMessages(state.chatMessages);
-  setupChatPromptChips();
-  setupCommandBar();
+    // 4. Activity Feed & Chat
+    const state = getState();
+    renderActivityFeed(state.activityFeed);
+    renderChatMessages(state.chatMessages);
+    setupChatPromptChips();
+    setupCommandBar();
 
-  // 5. Settings: Language, Themes, Color Pickers, Developer Mode
-  setupLanguageSwitcher();
-  setupThemePresets();
-  setupColorPickers();
-  setupDeveloperMode();
+    // 5. Settings: Language, Themes, Color Pickers, Developer Mode
+    setupLanguageSwitcher();
+    setupThemePresets();
+    setupColorPickers();
+    setupDeveloperMode();
 
-  // 6. Smart Devices, WoL & Running Processes (Phase 2)
-  initDevicesModule();
-  document.getElementById('btnRefreshProcesses')?.addEventListener('click', () => {
-    fetchRunningProcesses();
+    // 6. Smart Devices, WoL & Running Processes (Phase 2)
+    initDevicesModule();
+    document.getElementById('btnRefreshProcesses')?.addEventListener('click', () => {
+      fetchRunningProcesses();
+    });
+
+    // 7. Live Media & Audio Deck (Phase 3)
+    initMediaModule();
+
+    // 8. Syncthing Peer Status
+    fetchSyncStatus();
+
+    // 9. Mobile Companion Channel (Push & Telemetry)
+    setupMobileCompanionChannel();
+
+    // 10. Re-render devices on language change
+    window.addEventListener('aion:languagechange', () => {
+      renderDevicesView();
+    });
+
+    // 9. Subscribe to dynamic state updates
+    subscribe((currentState, key) => {
+      if (key === 'activityFeed') {
+        renderActivityFeed(currentState.activityFeed);
+      }
+      if (key === 'chatMessages') {
+        renderChatMessages(currentState.chatMessages);
+      }
+    });
   });
-
-  // 7. Live Media & Audio Deck (Phase 3)
-  initMediaModule();
-
-  // 8. Syncthing Peer Status
-  fetchSyncStatus();
-
-  // 9. Mobile Companion Channel (Push & Telemetry)
-  setupMobileCompanionChannel();
-
-  // 10. Re-render devices on language change
-  window.addEventListener('aion:languagechange', () => {
-    renderDevicesView();
-  });
-
-  // 9. Subscribe to dynamic state updates
-  subscribe((currentState, key) => {
-    if (key === 'activityFeed') {
-      renderActivityFeed(currentState.activityFeed);
-    }
-    if (key === 'chatMessages') {
-      renderChatMessages(currentState.chatMessages);
-    }
-  });
-});
+}

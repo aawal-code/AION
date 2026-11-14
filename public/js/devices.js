@@ -14,6 +14,7 @@ let cachedProcesses = [];
 let selectedDeviceId = 'local'; // 'all' | 'assistant' | device.id
 let showAllProcesses = false;
 let editingDeviceId = null;
+let appMode = (typeof localStorage !== 'undefined' && localStorage.getItem('aion_dev_mode') === 'true') ? 'advanced' : 'simple';
 
 // ==========================================================================
 // Silent Data Fetching (Never spam toasts on background refreshes)
@@ -94,17 +95,113 @@ export function renderSettingsWol() {
   }
 }
 
-export async function fetchRunningProcesses() {
+export async function fetchLocalTelemetry() {
   try {
-    const res = await fetch('/api/system/processes');
+    const res = await fetch('/api/system/telemetry');
     if (!res.ok) return;
     const data = await res.json();
-    if (data.status === 'ok' && Array.isArray(data.processes)) {
-      cachedProcesses = data.processes;
+    if (data.status !== 'ok') return;
+
+    if (data.cpu) {
+      const cpuVal = document.getElementById('telemCpuVal');
+      const cpuBar = document.getElementById('telemCpuBar');
+      const cpuPill = document.getElementById('telemCpuPill');
+      const pct = Math.round(data.cpu.percent || 0);
+      if (cpuVal) cpuVal.textContent = `${pct}%`;
+      if (cpuBar) cpuBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      if (cpuPill) cpuPill.textContent = pct > 75 ? 'Heavy Load' : (pct > 30 ? 'Active' : 'Idle');
+    }
+
+    if (data.memory) {
+      const memVal = document.getElementById('telemMemVal');
+      const memBar = document.getElementById('telemMemBar');
+      const memMeta = document.getElementById('telemMemMeta');
+      const usedGb = (data.memory.usedMb / 1024).toFixed(1);
+      const totalGb = (data.memory.totalMb / 1024).toFixed(1);
+      const freeGb = (data.memory.freeMb / 1024).toFixed(1);
+      const pct = Math.round(data.memory.percent || 0);
+      if (memVal) memVal.textContent = `${usedGb} GB / ${totalGb} GB`;
+      if (memBar) memBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      if (memMeta) memMeta.textContent = `Available: ${freeGb} GB (${100 - pct}% free)`;
+    }
+
+    if (data.disk) {
+      const diskVal = document.getElementById('telemDiskVal');
+      const diskBar = document.getElementById('telemDiskBar');
+      const diskMeta = document.getElementById('telemDiskMeta');
+      const pct = Math.round(data.disk.percent || 0);
+      if (diskVal) diskVal.textContent = `${data.disk.usedGb} GB / ${data.disk.totalGb} GB`;
+      if (diskBar) diskBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      if (diskMeta) diskMeta.textContent = `Free: ${data.disk.freeGb} GB • Read: ${data.disk.readSec || 0} MB/s Write: ${data.disk.writeSec || 0} MB/s`;
+    }
+  } catch (err) {
+    console.debug('[AION Telemetry] fetch error:', err.message);
+  }
+}
+
+export async function fetchRunningProcesses() {
+  try {
+    const res = await fetch('/api/system/apps');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === 'ok' && Array.isArray(data.apps)) {
+        cachedProcesses = data.apps.map((app) => ({
+          name: app.name,
+          processName: app.processName || app.name.toLowerCase().replace(/\s+/g, ''),
+          pids: app.pids || (app.pid ? [app.pid] : []),
+          pidCount: app.pidCount || (app.pids ? app.pids.length : 1),
+          memoryMb: Math.round(app.memoryMb || 0),
+          cpuPercent: Math.round(app.cpuPercent || 0),
+          path: app.path || '',
+        }));
+        renderRunningProcesses();
+        return;
+      }
+    }
+
+    const fallbackRes = await fetch('/api/system/processes');
+    if (!fallbackRes.ok) return;
+    const fallbackData = await fallbackRes.json();
+    if (fallbackData.status === 'ok' && Array.isArray(fallbackData.processes)) {
+      cachedProcesses = fallbackData.processes.map((proc) => ({
+        name: proc.name,
+        processName: proc.processName || proc.name.toLowerCase().replace(/\s+/g, ''),
+        pids: [proc.pid || 0],
+        pidCount: 1,
+        memoryMb: Math.round(proc.memoryMb || 0),
+        cpuPercent: 0,
+        path: '',
+      }));
       renderRunningProcesses();
     }
   } catch (err) {
     console.debug('[AION Processes] Background fetch silent error:', err.message);
+  }
+}
+
+export async function killApp(appName, procName = '') {
+  try {
+    const res = await fetch('/api/system/apps/kill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: appName }),
+    });
+
+    if (!res.ok) {
+      await fetch('/api/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'kill_process', target: procName || appName }),
+      });
+    }
+
+    showToast(`Terminated ${appName}`, 'power');
+    addActivity('Quit Application', `Terminated ${appName}`, 'power');
+    cachedProcesses = cachedProcesses.filter((p) => p.name !== appName && p.processName !== procName);
+    const countEl = document.getElementById('appsCountBadge');
+    if (countEl) countEl.textContent = `${cachedProcesses.length} apps`;
+  } catch (err) {
+    showToast(`Failed terminating ${appName}: ${err.message}`, 'close');
   }
 }
 
@@ -315,26 +412,86 @@ function renderActiveCanvasView() {
       const desktopPower = document.getElementById('desktopPowerSection');
       const desktopMedia = document.getElementById('mediaDeckSection');
       const desktopApps = document.getElementById('desktopAppsSection');
+      const localTelemetry = document.getElementById('localTelemetrySection');
+      const remoteActions = document.getElementById('remoteActionsSection');
       const mobileCompanion = document.getElementById('mobileCompanionDeck');
 
-      if (isMobileDevice(dev)) {
+      const isMobile = isMobileDevice(dev);
+      const isLocal = !dev || dev.isLocal === true || dev.id === 'local';
+
+      if (isMobile) {
+        // Mobile / iPhone / Tablet view:
+        // Hide desktop Power, Media, Apps, and Telemetry; show dedicated Mobile Companion Deck
         if (desktopPower) desktopPower.style.display = 'none';
         if (desktopMedia) desktopMedia.style.display = 'none';
         if (desktopApps) desktopApps.style.display = 'none';
+        if (localTelemetry) localTelemetry.style.display = 'none';
+        if (remoteActions) remoteActions.style.display = 'none';
         if (mobileCompanion) {
           mobileCompanion.style.display = 'block';
           renderMobileCompanionDeck(dev);
         }
+      } else if (isLocal) {
+        // Local desktop / laptop view:
+        // Hide power buttons (prevent accidental self-lock/sleep/shutdown)
+        // Hide remote actions
+        // Render Local Telemetry Deck (live CPU, RAM, Disk charts) and Clean App Manager
+        if (desktopPower) desktopPower.style.display = 'none';
+        if (remoteActions) remoteActions.style.display = 'none';
+        if (mobileCompanion) mobileCompanion.style.display = 'none';
+        if (desktopMedia) desktopMedia.style.display = 'block';
+        if (desktopApps) {
+          desktopApps.style.display = 'block';
+          renderRunningProcesses();
+        }
+        if (localTelemetry) {
+          localTelemetry.style.display = 'block';
+          fetchLocalTelemetry();
+        }
       } else {
+        // Remote PC / laptop view:
+        // Render touch-friendly Power Deck (Lock, Sleep, Shut Down, Screen Off)
+        // Render Media Controls
+        // Render 'View Screen' (RustDesk) + 'Test WoL' action row
+        // Hide local telemetry deck
+        if (localTelemetry) localTelemetry.style.display = 'none';
+        if (mobileCompanion) mobileCompanion.style.display = 'none';
         if (desktopPower) desktopPower.style.display = 'block';
         if (desktopMedia) desktopMedia.style.display = 'block';
-        if (desktopApps) desktopApps.style.display = 'block';
-        if (mobileCompanion) mobileCompanion.style.display = 'none';
-        renderRunningProcesses();
+        if (remoteActions) {
+          remoteActions.style.display = 'block';
+          setupRemoteActions(dev);
+        }
+        if (desktopApps) {
+          desktopApps.style.display = 'block';
+          renderRunningProcesses();
+        }
       }
 
       renderCompactActivity();
     }
+  }
+}
+
+function setupRemoteActions(dev) {
+  const btnViewScreen = document.getElementById('btnRemoteViewScreen');
+  const btnTestWol = document.getElementById('btnRemoteTestWol');
+
+  if (btnViewScreen) {
+    btnViewScreen.onclick = () => {
+      const target = dev ? (dev.tailscaleIp || dev.lanIp || dev.id) : '';
+      if (target) {
+        window.location.href = `rustdesk://${target}`;
+      }
+    };
+  }
+
+  if (btnTestWol) {
+    btnTestWol.onclick = () => {
+      if (dev) {
+        wakeDevice(dev.id, dev.mac);
+      }
+    };
   }
 }
 
@@ -348,6 +505,8 @@ function renderDeviceCanvasHeader() {
   const statusText = document.getElementById('canvasDeviceStatusText');
   const wakeBtn = document.getElementById('btnCanvasWake');
   const mobileTopTitle = document.getElementById('mobileTopTitle');
+  const connBadge = document.getElementById('canvasConnectionBadge');
+  const connText = document.getElementById('canvasConnectionText');
 
   if (nameEl) nameEl.textContent = dev.name;
   if (mobileTopTitle) mobileTopTitle.textContent = dev.name;
@@ -370,10 +529,22 @@ function renderDeviceCanvasHeader() {
     statusText.textContent = isOnline ? t('statusConnected') : t('statusOffline');
   }
 
+  // Network State Connection Badge ('LAN' or 'Tailscale Mesh')
+  if (connBadge && connText) {
+    const isMesh = Boolean(dev.tailscaleIp || dev.source === 'tailscale' || (dev.telemetry && dev.telemetry.route === 'mesh'));
+    if (isMesh) {
+      connBadge.className = 'device-connection-badge mesh';
+      connText.textContent = 'Tailscale Mesh';
+    } else {
+      connBadge.className = 'device-connection-badge lan';
+      connText.textContent = 'LAN';
+    }
+  }
+
   // View Screen Button (for Desktop / Laptop nodes)
   const viewScreenBtn = document.getElementById('btnCanvasViewScreen');
   if (viewScreenBtn) {
-    if (!isMobileDevice(dev)) {
+    if (!isMobileDevice(dev) && !dev.isLocal) {
       viewScreenBtn.style.display = 'inline-flex';
       viewScreenBtn.onclick = () => {
         const target = dev.tailscaleIp || dev.lanIp || dev.id;
@@ -386,7 +557,7 @@ function renderDeviceCanvasHeader() {
 
   // Wake Button visibility (only for desktop / PC nodes with MAC)
   if (wakeBtn) {
-    if (!isOnline && dev.mac && !isMobileDevice(dev)) {
+    if (!isOnline && dev.mac && !isMobileDevice(dev) && !dev.isLocal) {
       wakeBtn.style.display = 'inline-flex';
       wakeBtn.onclick = () => wakeDevice(dev.id, dev.mac);
     } else {
@@ -501,13 +672,42 @@ function formatLastSeen(isoStr) {
 // Section 2: Running Apps (Clean borderless rows, max 6 with toggle)
 // ==========================================================================
 
+export function setAppMode(mode) {
+  appMode = mode === 'advanced' ? 'advanced' : 'simple';
+  if (typeof document !== 'undefined') {
+    const btnSimple = document.getElementById('btnAppModeSimple');
+    const btnAdv = document.getElementById('btnAppModeAdvanced');
+    if (btnSimple && btnAdv) {
+      btnSimple.classList.toggle('active', appMode === 'simple');
+      btnAdv.classList.toggle('active', appMode === 'advanced');
+    }
+    renderRunningProcesses();
+  }
+}
+
+export function getAppMode() {
+  return appMode;
+}
+
 export function renderRunningProcesses() {
   const container = document.getElementById('canvasProcessesList');
   const toggleBtn = document.getElementById('btnToggleAllProcesses');
+  const countBadge = document.getElementById('appsCountBadge');
   if (!container) return;
 
+  if (countBadge) {
+    countBadge.textContent = `${cachedProcesses.length} apps`;
+  }
+
+  const btnSimple = document.getElementById('btnAppModeSimple');
+  const btnAdv = document.getElementById('btnAppModeAdvanced');
+  if (btnSimple && btnAdv) {
+    btnSimple.classList.toggle('active', appMode === 'simple');
+    btnAdv.classList.toggle('active', appMode === 'advanced');
+  }
+
   if (cachedProcesses.length === 0) {
-    container.innerHTML = `<div class="empty-state-row">${t('noRunningApps')}</div>`;
+    container.innerHTML = `<div class="empty-state-row">${t('noRunningApps') || 'No running applications detected'}</div>`;
     if (toggleBtn) toggleBtn.style.display = 'none';
     return;
   }
@@ -526,33 +726,55 @@ export function renderRunningProcesses() {
   const visible = showAllProcesses ? cachedProcesses : cachedProcesses.slice(0, 6);
 
   container.innerHTML = visible
-    .map(
-      (proc) => `
-    <div class="app-row">
-      <div class="app-row-main">
-        <div class="app-icon-box">
-          ${getSvgIcon('cpu', 'icon-sm')}
+    .map((proc) => {
+      const isAdv = appMode === 'advanced';
+      const pidInfo = proc.pids && proc.pids.length > 0
+        ? ` • PIDs: [${proc.pids.slice(0, 4).join(', ')}${proc.pids.length > 4 ? '...' : ''}] (${proc.pidCount || proc.pids.length} procs)`
+        : '';
+      const subDetail = isAdv
+        ? `${escapeHtml(proc.processName)}.exe${pidInfo}`
+        : `${escapeHtml(proc.processName)}.exe`;
+
+      const cpuBadge = isAdv
+        ? `<span class="app-cpu-badge">${proc.cpuPercent || 0}% CPU</span>`
+        : '';
+
+      const ramText = isAdv ? `${proc.memoryMb} MB RAM` : `${proc.memoryMb} MB`;
+
+      return `
+      <div class="app-row" data-proc-row="${escapeHtml(proc.name)}">
+        <div class="app-row-main">
+          <div class="app-icon-box">
+            ${getSvgIcon('cpu', 'icon-sm')}
+          </div>
+          <div class="app-names">
+            <div class="app-friendly-name">${escapeHtml(proc.name)}</div>
+            <div class="app-sub-detail">${subDetail}</div>
+          </div>
         </div>
-        <div class="app-names">
-          <div class="app-friendly-name">${escapeHtml(proc.name)}</div>
-          <div class="app-sub-detail">${escapeHtml(proc.processName)}.exe</div>
+        <div class="app-row-actions">
+          ${cpuBadge}
+          <span class="app-ram-badge">${ramText}</span>
+          <button class="app-kill-btn" data-app-name="${escapeHtml(proc.name)}" data-proc-name="${escapeHtml(proc.processName)}" title="${t('btnQuitApp') || 'End Task'}" type="button">
+            ${isAdv ? 'Kill' : (t('btnQuitApp') || 'Quit')}
+          </button>
         </div>
       </div>
-      <div class="app-row-actions">
-        <span class="app-ram-badge">${proc.memoryMb} MB</span>
-        <button class="app-quit-btn" data-target="${escapeHtml(proc.processName)}" title="${t('btnQuitApp')}" type="button">
-          ${t('btnQuitApp')}
-        </button>
-      </div>
-    </div>
-  `
-    )
+    `;
+    })
     .join('');
 
-  container.querySelectorAll('.app-quit-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const target = btn.getAttribute('data-target');
-      if (target) executeControlAction('kill_process', target);
+  container.querySelectorAll('.app-kill-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const row = btn.closest('.app-row');
+      const appName = btn.getAttribute('data-app-name');
+      const procName = btn.getAttribute('data-proc-name');
+      if (row) {
+        row.classList.add('removing');
+        setTimeout(() => row.remove(), 260);
+      }
+      await killApp(appName, procName);
     });
   });
 }
@@ -782,10 +1004,30 @@ export function initDevicesModule() {
     });
   });
 
-  // Running Apps Show All Toggle
+  // Running Apps Show All Toggle & Refresh
   document.getElementById('btnToggleAllProcesses')?.addEventListener('click', () => {
     showAllProcesses = !showAllProcesses;
     renderRunningProcesses();
+  });
+
+  document.getElementById('btnRefreshProcesses')?.addEventListener('click', async () => {
+    await fetchRunningProcesses();
+    showToast('Running apps refreshed', 'check');
+  });
+
+  // App Manager Mode Toggle (Simple vs Advanced)
+  document.getElementById('btnAppModeSimple')?.addEventListener('click', () => {
+    setAppMode('simple');
+  });
+
+  document.getElementById('btnAppModeAdvanced')?.addEventListener('click', () => {
+    setAppMode('advanced');
+  });
+
+  // Local Telemetry Refresh Button
+  document.getElementById('btnRefreshLocalTelemetry')?.addEventListener('click', async () => {
+    await fetchLocalTelemetry();
+    showToast('Local telemetry refreshed', 'check');
   });
 
   // Edit Device Modal Actions
@@ -960,10 +1202,13 @@ export function initDevicesModule() {
     showToast("Opening 'AION Runner' shortcut in Apple Shortcuts...", 'activity');
   });
 
-  // Subscribe to activity updates so recent activity re-renders
+  // Subscribe to activity updates and devMode so recent activity and app mode re-render
   subscribe((state, key) => {
     if (key === 'activityFeed') {
       renderCompactActivity();
+    }
+    if (key === 'devMode') {
+      setAppMode(state.devMode ? 'advanced' : 'simple');
     }
   });
 
