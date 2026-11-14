@@ -38,3 +38,5 @@ data/vapid.json
 data/push-subscriptions.json
 data/screen-view.json
 data/device-identity.json
+data/*.sqlite*
+data/vault.enc

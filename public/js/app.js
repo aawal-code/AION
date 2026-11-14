@@ -37,6 +37,7 @@ import { initDevicesModule, fetchRunningProcesses, renderDevicesView, selectDevi
 import { initMediaModule } from './media.js';
 import { initNav } from './nav.js';
 import { initSettings } from './settings.js';
+import { initAssistantWorkspace } from './assistant.js';
 
 // ==========================================================================
 // Service Worker Live Controller Reload (Mobile / Desktop PWA Auto-Refresh)
@@ -1342,7 +1343,10 @@ if (typeof document !== 'undefined') {
     // 9. Mobile Companion Channel (Push & Telemetry)
     setupMobileCompanionChannel();
 
-    // 10. Re-render devices on language change
+    // 10. Assistant Workspace & BYOCLI CLI Bridge (Milestone 6)
+    initAssistantWorkspace();
+
+    // 11. Re-render devices on language change
     window.addEventListener('aion:languagechange', () => {
       renderDevicesView();
     });

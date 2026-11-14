@@ -2950,3 +2950,282 @@ html[dir="rtl"] .apple-switch input:checked + .apple-switch-slider::before {
     padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* ==========================================================================
+   Milestone 6: Assistant Workspace & Terminal Streaming Styles
+   ========================================================================== */
+
+.assistant-workspace-layout {
+  display: flex;
+  gap: 16px;
+  height: calc(100vh - 160px);
+  min-height: 480px;
+}
+
+.assistant-projects-sidebar {
+  width: 200px;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.assistant-projects-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.assistant-projects-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.assistant-projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.assistant-project-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s var(--ease-spring);
+}
+
+.assistant-project-item:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.assistant-project-item.active {
+  background: var(--surface-active);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.assistant-main-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.assistant-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.assistant-project-name {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.assistant-pinned-context {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  display: block;
+  margin-top: 2px;
+}
+
+/* 3-Way Mode Segmented Toggle (Ask, Plan, Execute) */
+.assistant-mode-segmented {
+  display: inline-flex;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+  gap: 3px;
+}
+
+.assistant-mode-btn {
+  padding: 5px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.assistant-mode-btn:hover {
+  color: var(--text-primary);
+}
+
+.assistant-mode-btn.active[data-mode="ask"] {
+  background: var(--surface-solid);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.assistant-mode-btn.active[data-mode="plan"] {
+  background: var(--surface-solid);
+  color: #8b5cf6;
+  box-shadow: var(--shadow-sm);
+}
+
+.assistant-mode-btn.active[data-mode="execute"] {
+  background: var(--surface-solid);
+  color: #10b981;
+  box-shadow: var(--shadow-sm);
+}
+
+.assistant-mode-indicator {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+}
+
+.assistant-mode-indicator.ask {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.assistant-mode-indicator.plan {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+}
+
+.assistant-mode-indicator.execute {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+/* Dark Terminal Blocks for Execute Mode */
+.terminal-block {
+  background: #0d1117;
+  color: #c9d1d9;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  margin: 6px 0;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  background: #161b22;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.terminal-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.terminal-dot.red { background: #ff5f56; }
+.terminal-dot.yellow { background: #ffbd2e; }
+.terminal-dot.green { background: #27c93f; }
+
+.terminal-title {
+  font-size: 11px;
+  color: #8b949e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 65%;
+}
+
+.terminal-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.terminal-badge.running {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  animation: pulseMic 1.2s infinite ease-in-out;
+}
+
+.terminal-badge.completed {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.terminal-badge.failed {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.terminal-body {
+  padding: 12px 14px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  max-height: 320px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #e6edf3;
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  background: #34d399;
+  vertical-align: middle;
+  margin-left: 2px;
+  animation: pulseMic 0.8s infinite;
+}
+
+/* Voice Input Pulsing Animation */
+.command-btn-mic.listening {
+  color: #ef4444 !important;
+  animation: pulseMic 1.2s infinite ease-in-out;
+}
+
+@keyframes pulseMic {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}

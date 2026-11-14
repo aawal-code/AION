@@ -35,6 +35,7 @@ import { handleSystemRoutes } from './system.js';
 import { handleCommandsRoutes } from './commands.js';
 import { handleAuthRoutes } from './auth.js';
 import { handleNetworkRoutes } from './network.js';
+import { handleAssistantRoutes } from './assistant.js';
 
 const PUBLIC_DIR = path.resolve('public');
 
@@ -282,6 +283,12 @@ export async function handleRequest(req, res) {
         paired: false,
       });
     }
+  }
+
+  // Assistant Workspace & BYOCLI Execution Engine
+  if (urlPath.startsWith('/api/assistant')) {
+    const handled = await handleAssistantRoutes(req, res, urlPath);
+    if (handled !== false) return;
   }
 
   // 6. Zero-AI Instant Multilingual Command Router (<10ms)
