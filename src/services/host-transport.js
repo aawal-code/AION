@@ -7,7 +7,6 @@ import { getTransportIdentity } from './transport-identity.js';
 import { applyFileEvent } from './file-sync.js';
 
 const MAX_FRAME = 64 * 1024;
-const MAX_BUFFER = MAX_FRAME + 4;
 const AUTH_TIMEOUT_MS = 10_000;
 const IDLE_TIMEOUT_MS = 60_000;
 const EXPORTER_LABEL = 'AION/TLS channel binding v1';
@@ -26,26 +25,50 @@ function validateEvent(event) {
   if (Buffer.byteLength(JSON.stringify(event.payload ?? {})) > MAX_FRAME / 2) throw new Error('Replication payload exceeds the configured limit');
 }
 
-class SecureConnection extends EventEmitter {
+export class SecureConnection extends EventEmitter {
   constructor(socket, { localDeviceId, expectedPeerFingerprint = null }) {
-    super(); this.socket = socket; this.localDeviceId = localDeviceId; this.expectedPeerFingerprint = expectedPeerFingerprint; this.context = null; this.pending = new Map(); this.buffer = Buffer.alloc(0); this.authenticated = false;
+    super(); this.socket = socket; this.localDeviceId = localDeviceId; this.expectedPeerFingerprint = expectedPeerFingerprint; this.context = null; this.pending = new Map(); this.header = Buffer.alloc(4); this.headerBytes = 0; this.body = null; this.bodyBytes = 0; this.writeQueue = Promise.resolve(); this.authenticated = false;
     socket.setTimeout(AUTH_TIMEOUT_MS, () => fail(socket, 'Transport authentication timed out'));
-    socket.on('data', (chunk) => this.consume(chunk));
+    socket.on('data', (chunk) => { socket.pause(); this.consume(chunk).then(() => { if (!socket.destroyed) socket.resume(); }, (error) => fail(socket, error.message)); });
     socket.on('error', (error) => this.rejectPending(error));
     socket.on('close', () => { this.rejectPending(new Error('Transport connection closed')); this.emit('close'); });
   }
   rejectPending(error) { for (const pending of this.pending.values()) pending.reject(error); this.pending.clear(); }
-  send(message) { if (this.socket.destroyed) throw new Error('Transport connection is closed'); this.socket.write(frame(message)); }
-  async sendAuth(identity) { this.send({ type: 'auth', deviceId: this.localDeviceId, signature: identity.signChannel(channelBinding(this.socket)) }); }
-  consume(chunk) {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    if (this.buffer.length > MAX_BUFFER) return fail(this.socket, 'Transport frame buffer limit exceeded');
-    while (this.buffer.length >= 4) {
-      const length = this.buffer.readUInt32BE(0); if (!length || length > MAX_FRAME) return fail(this.socket, 'Invalid transport frame size');
-      if (this.buffer.length < length + 4) return;
-      const body = this.buffer.subarray(4, length + 4); this.buffer = this.buffer.subarray(length + 4);
-      let message; try { message = JSON.parse(body.toString('utf8')); } catch { return fail(this.socket, 'Invalid transport JSON'); }
-      this.handle(message).catch((error) => fail(this.socket, error.message));
+  send(message) {
+    const writing = this.writeQueue.then(() => this.writeMessage(message));
+    this.writeQueue = writing.catch(() => {});
+    return writing;
+  }
+  async writeMessage(message) {
+    if (this.socket.destroyed) throw new Error('Transport connection is closed');
+    if (this.socket.write(frame(message))) return;
+    await new Promise((resolve, reject) => {
+      const cleanup = () => { this.socket.off('drain', onDrain); this.socket.off('error', onError); this.socket.off('close', onClose); };
+      const onDrain = () => { cleanup(); resolve(); };
+      const onError = (error) => { cleanup(); reject(error); };
+      const onClose = () => { cleanup(); reject(new Error('Transport connection closed')); };
+      this.socket.once('drain', onDrain); this.socket.once('error', onError); this.socket.once('close', onClose);
+      if (this.socket.destroyed) onClose();
+    });
+  }
+  async sendAuth(identity) { await this.send({ type: 'auth', deviceId: this.localDeviceId, signature: identity.signChannel(channelBinding(this.socket)) }); }
+  async consume(chunk) {
+    let offset = 0;
+    while (offset < chunk.length && !this.socket.destroyed) {
+      if (!this.body) {
+        const count = Math.min(4 - this.headerBytes, chunk.length - offset);
+        chunk.copy(this.header, this.headerBytes, offset, offset + count); this.headerBytes += count; offset += count;
+        if (this.headerBytes < 4) continue;
+        const length = this.header.readUInt32BE(0); this.headerBytes = 0;
+        if (!length || length > MAX_FRAME) throw new Error('Invalid transport frame size');
+        this.body = Buffer.allocUnsafe(length); this.bodyBytes = 0;
+      }
+      const count = Math.min(this.body.length - this.bodyBytes, chunk.length - offset);
+      chunk.copy(this.body, this.bodyBytes, offset, offset + count); this.bodyBytes += count; offset += count;
+      if (this.bodyBytes !== this.body.length) continue;
+      const body = this.body; this.body = null; this.bodyBytes = 0;
+      let message; try { message = JSON.parse(body.toString('utf8')); } catch { throw new Error('Invalid transport JSON'); }
+      await this.handle(message);
     }
   }
   async handle(message) {
@@ -66,7 +89,7 @@ class SecureConnection extends EventEmitter {
     // The exporter-bound proof is verified at connection authentication. Each
     // protected frame rechecks persistent revocation and capability state.
     if (!await isTransportPeerAuthorized({ deviceId: this.context.deviceId, certificate })) throw new Error('Peer authorization was revoked');
-    if (message.type === 'event') { validateEvent(message.event); const result = await applyInboundEvent(message.event); if (result.status === 'applied') await applyFileEvent(message.event); this.send({ type: 'ack', eventId: message.event.eventId, status: result.status }); return; }
+    if (message.type === 'event') { validateEvent(message.event); const result = await applyInboundEvent(message.event); if (result.status === 'applied') await applyFileEvent(message.event); await this.send({ type: 'ack', eventId: message.event.eventId, status: result.status }); return; }
     if (message.type === 'ack') { const pending = this.pending.get(message.eventId); if (pending) { this.pending.delete(message.eventId); pending.resolve(message.status); } return; }
     throw new Error('Unsupported transport message');
   }
@@ -74,7 +97,7 @@ class SecureConnection extends EventEmitter {
     if (!this.authenticated) throw new Error('Transport is not authenticated');
     const events = await listOutboundEvents(100);
     for (const event of events) {
-      const status = await new Promise((resolve, reject) => { const timer = setTimeout(() => { this.pending.delete(event.eventId); reject(new Error('Replication acknowledgement timed out')); }, AUTH_TIMEOUT_MS); this.pending.set(event.eventId, { resolve: (value) => { clearTimeout(timer); resolve(value); }, reject: (error) => { clearTimeout(timer); reject(error); } }); this.send({ type: 'event', event }); });
+      const status = await new Promise((resolve, reject) => { const timer = setTimeout(() => { this.pending.delete(event.eventId); reject(new Error('Replication acknowledgement timed out')); }, AUTH_TIMEOUT_MS); this.pending.set(event.eventId, { resolve: (value) => { clearTimeout(timer); resolve(value); }, reject: (error) => { clearTimeout(timer); reject(error); } }); this.send({ type: 'event', event }).catch((error) => { const pending = this.pending.get(event.eventId); if (pending) { this.pending.delete(event.eventId); pending.reject(error); } }); });
       if (['applied', 'duplicate', 'conflict'].includes(status)) await acknowledgeOutboundEvent(event.eventId); else throw new Error('Invalid replication acknowledgement');
     }
     return events.length;
@@ -83,8 +106,14 @@ class SecureConnection extends EventEmitter {
 }
 
 async function authenticate(connection, identity) {
-  await connection.sendAuth(identity);
-  await new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Peer authentication timed out')), AUTH_TIMEOUT_MS); connection.once('authenticated', () => { clearTimeout(timer); resolve(); }); connection.once('close', () => { clearTimeout(timer); reject(new Error('Peer closed during authentication')); }); });
+  const authenticated = new Promise((resolve, reject) => {
+    const cleanup = () => { clearTimeout(timer); connection.off('authenticated', onAuthenticated); connection.off('close', onClose); };
+    const onAuthenticated = () => { cleanup(); resolve(); };
+    const onClose = () => { cleanup(); reject(new Error('Peer closed during authentication')); };
+    const timer = setTimeout(() => { cleanup(); reject(new Error('Peer authentication timed out')); }, AUTH_TIMEOUT_MS);
+    connection.once('authenticated', onAuthenticated); connection.once('close', onClose);
+  });
+  await Promise.all([connection.sendAuth(identity), authenticated]);
   return connection;
 }
 
