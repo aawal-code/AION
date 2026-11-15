@@ -16,6 +16,8 @@ const header = (jar, csrf, origin) => ({ cookie: jar, origin, 'x-aion-csrf': csr
 test('security contract rejects local impostors and enforces signed cookie sessions with CSRF', async () => {
   const sandbox = await mkdtemp(path.join(os.tmpdir(), 'aion-auth-contract-'));
   const listenPort = await port(); const secret = crypto.randomBytes(32).toString('base64url');
+  process.env.AION_TRANSPORT_IDENTITY_PATH = path.join(sandbox, 'joining-transport.dpapi');
+  const transport = await import(`../src/services/transport-identity.js?joining=${Date.now()}`); const joiningTransport = await transport.getTransportIdentity('joining');
   const child = spawn(process.execPath, ['src/server.js'], { cwd: root, env: { ...process.env, PORT: String(listenPort), AION_SECURITY_DB_PATH: path.join(sandbox, 'security.sqlite'), AION_LOCAL_AUTH_SECRET: secret, AION_TEST_VAULT_KEY: 'fixture-only' }, stdio: 'ignore', windowsHide: true });
   const origin = `http://127.0.0.1:${listenPort}`;
   try {
@@ -40,8 +42,7 @@ test('security contract rejects local impostors and enforces signed cookie sessi
     const invitationResponse = await fetch(`${origin}/api/auth/pairing/invitations`, { method: 'POST', headers: header(sessionJar, sessionCsrf, origin), body: '{}' });
     assert.equal(invitationResponse.status, 201, 'only an Owner session creates a pairing invitation'); const invitation = await invitationResponse.json();
     assert.match(invitation.qrPayload, /^AION-PAIR:/, 'the QR payload contains an invitation identifier, not a session token');
-    const joining = crypto.generateKeyPairSync('ed25519');
-    assert.equal((await fetch(`${origin}/api/auth/pairing/claim`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ invitationId: invitation.invitationId, name: 'Synthetic joiner', publicKey: joining.publicKey.export({ type: 'spki', format: 'pem' }) }) })).status, 202);
+    assert.equal((await fetch(`${origin}/api/auth/pairing/claim`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ invitationId: invitation.invitationId, name: 'Synthetic joiner', publicKey: joiningTransport.devicePublicKey, transportCertificate: joiningTransport.certificate, transportBindingSignature: joiningTransport.signCertificateBinding() }) })).status, 202);
     assert.equal((await fetch(`${origin}/api/auth/pairing/${invitation.invitationId}/approve`, { method: 'POST', headers: header(sessionJar, sessionCsrf, origin), body: JSON.stringify({ verificationCode: invitation.verificationCode, role: 'limited' }) })).status, 201);
     assert.equal((await fetch(`${origin}/api/auth/pairing/${invitation.invitationId}/approve`, { method: 'POST', headers: header(sessionJar, sessionCsrf, origin), body: JSON.stringify({ verificationCode: invitation.verificationCode }) })).status, 400, 'approval replay is rejected');
     assert.equal((await fetch(`${origin}/api/auth/authenticate`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.challengeId, signature }) })).status, 400, 'challenge replay is rejected');
