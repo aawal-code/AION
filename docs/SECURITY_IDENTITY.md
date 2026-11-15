@@ -4,7 +4,7 @@
 
 Network location is not an identity. Loopback, a private address, Tailscale membership, and a device name never grant a role. The listener remains loopback-only under Phase 1.
 
-The native desktop shell holds a per-start secret only in its child-process environment. It exchanges that secret once for an HttpOnly, `SameSite=Strict` browser session. This is a compatibility bridge for the trusted desktop host—not a general local-process bypass. Browser-only source launches are intentionally unsupported until local IPC is designed.
+The production desktop shell currently blocks startup and does not send a bootstrap secret to a loopback listener. It displays an in-window unavailable state using a separate WebView2 profile while process-bound IPC and Owner recovery are completed. This containment temporarily disables desktop access for both new and existing users; it is not the private-origin cutover. Browser-only source launches are not a substitute for a verified native security boundary.
 
 Other devices use Ed25519 public keys. A device signs a one-time server challenge; a successful signature creates an opaque, hashed, 20-minute session. Challenges are single-use and stored consumed transactionally. Browser sessions are delivered only in HttpOnly, `SameSite=Strict` cookies and tokens are never accepted in URLs. State-changing browser requests require an exact same-origin check and synchronizer CSRF token.
 

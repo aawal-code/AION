@@ -182,27 +182,10 @@ namespace AION.Desktop
         private string rootDir;
         private string nodePath;
         private string serverJs;
-        private readonly string hostPort;
         private bool isExiting = false;
-        private bool isNodeRestarting = false;
-        private readonly string localAuthSecret = CreateLocalAuthSecret();
-
-        private static string CreateLocalAuthSecret()
-        {
-            byte[] bytes = new byte[32];
-            using (RandomNumberGenerator rng = RandomNumberGenerator.Create())
-            {
-                rng.GetBytes(bytes);
-            }
-            return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
-        }
-
         public MainWindow(string[] args)
         {
             this.appDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
-            string requestedPort = Environment.GetEnvironmentVariable("AION_PORT");
-            int validatedPort;
-            this.hostPort = Int32.TryParse(requestedPort, out validatedPort) && validatedPort > 0 && validatedPort < 65536 ? validatedPort.ToString() : "5050";
             ResolvePaths();
 
             InitializeJobObject();
@@ -210,8 +193,6 @@ namespace AION.Desktop
             InitializeTray();
             InitializeWebView();
 
-            StartOrSuperviseNode();
-            InitializeWatchdog();
 
             this.FormClosing += MainWindow_FormClosing;
             Application.ApplicationExit += (s, e) => CleanupAll();
@@ -339,8 +320,8 @@ namespace AION.Desktop
             ToolStripMenuItem openItem = new ToolStripMenuItem("Open AION", null, (s, e) => RestoreWindow());
             openItem.Font = new Font(openItem.Font, FontStyle.Bold);
 
-            ToolStripMenuItem pairItem = new ToolStripMenuItem("Security & pairing", null, (s, e) => ShowPairingDialog());
-            ToolStripMenuItem restartItem = new ToolStripMenuItem("Restart Core", null, (s, e) => RestartNodeCore());
+            ToolStripMenuItem pairItem = new ToolStripMenuItem("Security & pairing") { Enabled = false };
+            ToolStripMenuItem restartItem = new ToolStripMenuItem("Restart Core") { Enabled = false };
             ToolStripSeparator sep = new ToolStripSeparator();
             ToolStripMenuItem exitItem = new ToolStripMenuItem("Exit", null, (s, e) => ExitApplication());
 
@@ -370,8 +351,8 @@ namespace AION.Desktop
 
             string overrideData = Environment.GetEnvironmentVariable("AION_WEBVIEW2_DATA_PATH");
             string userDataFolder = String.IsNullOrWhiteSpace(overrideData)
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AION", "webview2-data")
-                : Path.GetFullPath(overrideData);
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AION", "webview2-private-v1")
+                : Path.Combine(Path.GetFullPath(overrideData), "private-v1");
             Directory.CreateDirectory(userDataFolder);
 
             try
@@ -383,25 +364,16 @@ namespace AION.Desktop
                 webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                 webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
 
-                webView.CoreWebView2.NavigationCompleted += (s, e) =>
-                {
-                    if (!e.IsSuccess && !isExiting)
-                    {
-                        Task.Run(async () =>
-                        {
-                            await Task.Delay(1000);
-                            if (await IsDaemonAvailable() && webView != null && webView.CoreWebView2 != null)
-                            {
-                                this.BeginInvoke(new Action(() =>
-                                {
-                                    BootstrapWebViewSession();
-                                }));
-                            }
-                        });
-                    }
+                // Until process-bound IPC and Owner recovery are implemented,
+                // never navigate to a network origin or issue bootstrap credentials.
+                bool initialNavigation = true;
+                webView.CoreWebView2.NavigationStarting += (s, e) => { if (!initialNavigation) e.Cancel = true; initialNavigation = false; };
+                webView.CoreWebView2.NewWindowRequested += (s, e) => e.Handled = true;
+                webView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+                webView.CoreWebView2.WebResourceRequested += (s, e) => {
+                    e.Response = webView.CoreWebView2.Environment.CreateWebResourceResponse(new MemoryStream(new byte[0]), 403, "Blocked", "Cache-Control: no-store\r\n");
                 };
-
-                BootstrapWebViewSession();
+                webView.CoreWebView2.NavigateToString(@"<!doctype html><html><head><meta charset='utf-8'><meta http-equiv='Content-Security-Policy' content=""default-src 'none'; style-src 'unsafe-inline'""><title>AION secure startup</title><style>body{background:#101216;color:#f4f4f5;font:16px Segoe UI,sans-serif;margin:0}main{max-width:720px;margin:12vh auto;padding:32px}h1{font-size:30px}p{line-height:1.6;color:#c5c8cf}.card{border:1px solid #383c45;border-radius:14px;padding:24px;background:#1b1d22}</style></head><body><main><h1>AION secure startup is unavailable</h1><div class='card'><p>This development build cannot safely start the workspace yet. Secure local communication and Owner recovery are still being completed.</p><p>Your existing Owner identity, projects, conversations, and credentials have not been reset. Close AION and use a verified build once this work is complete.</p></div></main></body></html>");
             }
             catch (Exception ex)
             {
@@ -412,120 +384,6 @@ namespace AION.Desktop
                     MessageBoxIcon.Error
                 );
             }
-        }
-
-        private async void BootstrapWebViewSession()
-        {
-            for (int i = 0; i < 50; i++)
-            {
-                if (await IsDaemonAvailable())
-                {
-                    break;
-                }
-                await Task.Delay(200);
-            }
-
-            if (webView != null && webView.CoreWebView2 != null)
-            {
-                CoreWebView2WebResourceRequest request = webView.CoreWebView2.Environment.CreateWebResourceRequest(
-                    "http://localhost:" + hostPort + "/api/auth/local-session",
-                    "GET",
-                    null,
-                    "X-AION-Local-Secret: " + localAuthSecret
-                );
-                webView.CoreWebView2.NavigateWithWebResourceRequest(request);
-            }
-        }
-
-        private Task<bool> IsDaemonAvailable()
-        {
-            return Task.Run(() =>
-            {
-                try
-                {
-                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + hostPort + "/");
-                    req.Timeout = 800;
-                    using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
-                    {
-                        return res.StatusCode == HttpStatusCode.OK;
-                    }
-                }
-                catch
-                {
-                    return false;
-                }
-            });
-        }
-
-        private void StartOrSuperviseNode()
-        {
-            if (isExiting || isNodeRestarting) return;
-
-            Task.Run(async () =>
-            {
-                bool isRunning = await IsDaemonAvailable();
-                if (isRunning)
-                {
-                    return; // Already responsive
-                }
-
-                try
-                {
-                    ProcessStartInfo psi = new ProcessStartInfo(nodePath, "\"" + serverJs + "\"")
-                    {
-                        WorkingDirectory = rootDir,
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        WindowStyle = ProcessWindowStyle.Hidden,
-                        RedirectStandardOutput = false,
-                        RedirectStandardError = false
-                    };
-                    psi.EnvironmentVariables["PORT"] = hostPort;
-                    psi.EnvironmentVariables["NODE_ENV"] = "production";
-                    psi.EnvironmentVariables["TS_NOLAUNCH"] = "true";
-                    psi.EnvironmentVariables["AION_LOCAL_AUTH_SECRET"] = localAuthSecret;
-
-                    nodeProcess = Process.Start(psi);
-                    if (nodeProcess != null && jobObjectHandle != IntPtr.Zero)
-                    {
-                        try
-                        {
-                            AssignProcessToJobObject(jobObjectHandle, nodeProcess.Handle);
-                        }
-                        catch { }
-                    }
-                }
-                catch { }
-            });
-        }
-
-        private void InitializeWatchdog()
-        {
-            watchdogTimer = new System.Windows.Forms.Timer();
-            watchdogTimer.Interval = 15000; // 15 seconds
-            watchdogTimer.Tick += (s, e) => RunWatchdogCycle();
-            watchdogTimer.Start();
-        }
-
-        private void RunWatchdogCycle()
-        {
-            if (isExiting || isNodeRestarting) return;
-
-            Task.Run(async () =>
-            {
-                // 1. Self-heal Node Core (:5050)
-                bool daemonUp = await IsDaemonAvailable();
-                if (!daemonUp && !isExiting && !isNodeRestarting)
-                {
-                    StartOrSuperviseNode();
-                }
-
-                // 2. Check Tailscale mesh readiness
-                CheckTailscaleStatus();
-
-                // 3. Check RustDesk screen view service readiness
-                CheckRustDeskStatus();
-            });
         }
 
         private void CheckTailscaleStatus()
@@ -598,26 +456,6 @@ namespace AION.Desktop
                 }
             }
             catch { }
-        }
-
-        private async void RestartNodeCore()
-        {
-            isNodeRestarting = true;
-            try
-            {
-                TerminateManagedNode();
-                await Task.Delay(600);
-                StartOrSuperviseNode();
-                await Task.Delay(1200);
-                if (webView != null && webView.CoreWebView2 != null)
-                {
-                    BootstrapWebViewSession();
-                }
-            }
-            finally
-            {
-                isNodeRestarting = false;
-            }
         }
 
         private void TerminateManagedNode()

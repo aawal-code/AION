@@ -1,6 +1,6 @@
 # Private WebView IPC acceptance slice
 
-This isolated test slice is not a replacement for the production Windows shell. The existing production bootstrap race remains unresolved, and the loopback forwarding prototype remains disabled and untouched.
+This isolated test slice is not a replacement for the production Windows shell. The current production shell blocks startup rather than using the vulnerable loopback bootstrap; the usable private-IPC replacement remains incomplete, and the loopback forwarding prototype remains disabled and untouched.
 
 `tests/private-webview-ipc.test.js` compiles and runs a real WebView2 harness. It loads the repository's `public/index.html` and assets using an intercepted private origin; all other resource requests are blocked by the harness. A page request for the read-only `/api/auth/devices` operation is delivered through the C# harness to the exact Node child it launched, over inherited standard-input and standard-output pipes using `NativeIpcClient` and `serveNativeIpc` framed messages. The child uses the same `listAuthorizedIdentityDevices` service as the HTTP route. The test creates a synthetic Owner, signs a real Ed25519 challenge, and holds the resulting session exclusively in the child process. It tests rejection of an invalid session, a Limited device, and a revoked session. A POST mutation is blocked rather than bypassing CSRF.
 

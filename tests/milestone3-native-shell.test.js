@@ -198,7 +198,7 @@ describe('Milestone 3: The Native Shell & Install Pipeline', () => {
   // 4. Compiled Executables Suite Verification
   // =========================================================================
   describe('Compiled Executables Suite (dist/)', () => {
-    const distDir = path.join(rootDir, 'dist');
+    const distDir = process.env.AION_BUILD_OUTPUT || path.join(rootDir, 'dist');
     const aionExe = path.join(distDir, 'AION.exe');
     const setupExe = path.join(distDir, 'AION-Setup.exe');
     const uninstallExe = path.join(distDir, 'Uninstall.exe');
