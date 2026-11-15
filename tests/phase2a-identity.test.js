@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-test('Phase 2A identity store enforces signed role sessions, expiry/revocation, replay and recovery', async () => {
+test('Master spec §2: identity store enforces signed role sessions, explicit grants, expiry, revocation, replay and recovery', async () => {
   const sandbox = await mkdtemp(path.join(os.tmpdir(), 'aion-phase2a-'));
   const moduleUrl = new URL('../src/services/identity-store.js', import.meta.url).href;
   const code = `
@@ -22,7 +22,17 @@ test('Phase 2A identity store enforces signed role sessions, expiry/revocation, 
     const signature = crypto.sign(null, Buffer.from(challenge.signingPayload), trusted.privateKey).toString('base64url');
     const session = await s.authenticateChallenge({challengeId:challenge.challengeId, signature});
     assert.ok(await s.authorize(session.token, 'devices:read'));
+    assert.ok(await s.authorize(session.token, 'conversation:write'));
     assert.equal(await s.authorize(session.token, 'workstation:control'), null);
+    const limited = crypto.generateKeyPairSync('ed25519');
+    const limitedDevice = await s.createDevice({name:'limited', role:'limited', capabilities:[], publicKey:limited.publicKey.export({type:'spki',format:'pem'})}, {role:'owner',deviceId:enrolled.deviceId});
+    const limitedChallenge = await s.createChallenge(limitedDevice.id);
+    const limitedSignature = crypto.sign(null, Buffer.from(limitedChallenge.signingPayload), limited.privateKey).toString('base64url');
+    const limitedSession = await s.authenticateChallenge({challengeId:limitedChallenge.challengeId, signature:limitedSignature});
+    assert.equal(await s.authorize(limitedSession.token, 'devices:read'), null, 'an explicit empty grant set denies the role default');
+    await assert.rejects(() => s.createDevice({name:'escalate', role:'limited', capabilities:['conversation:write'], publicKey:crypto.generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})}, {role:'owner',deviceId:enrolled.deviceId}), /permitted/i);
+    const listed = await s.listDevices();
+    assert.deepEqual(listed.find((device) => device.id === limitedDevice.id).capabilities, []);
     await assert.rejects(() => s.authenticateChallenge({challengeId:challenge.challengeId, signature}), /replay|invalid|expired/i);
     await s.revokeDevice(device.id, {role:'owner',deviceId:enrolled.deviceId});
     assert.equal(await s.getSessionContext(session.token), null);

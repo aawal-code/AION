@@ -13,10 +13,10 @@ Other devices use Ed25519 public keys. A device signs a one-time server challeng
 | Role | Capabilities |
 |---|---|
 | Owner | All capabilities; can enroll/revoke devices and recover ownership. |
-| Trusted | Read device/system state and use conversation data. It cannot manage identity, secrets, OS control, screen control, updates, or execute CLI work. |
-| Limited | Read device state only. |
+| Trusted | Explicitly granted device/system read and conversation capabilities within the Trusted ceiling. It cannot manage identity, secrets, OS control, screen control, updates, or execute CLI work. |
+| Limited | Explicitly granted device-read capability only. |
 
-The router assigns a required capability before dispatching protected APIs. Phase 1-disabled APIs remain disabled regardless of role.
+The router assigns a required capability before dispatching protected APIs. Each non-Owner device persists its allowed capabilities transactionally; an empty grant set has no authority, and a requested grant outside the device role's ceiling is rejected. Phase 1-disabled APIs remain disabled regardless of role.
 
 ## Enrollment and recovery
 
