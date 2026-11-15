@@ -14,7 +14,7 @@ function protectedData(input, unprotect = false) {
   const encoded = Buffer.from(input).toString('base64');
   if (process.platform === 'win32') {
     const operation = unprotect ? 'Unprotect' : 'Protect';
-    const script = `$input=[Console]::In.ReadToEnd();$bytes=[Convert]::FromBase64String($input);$scope=[Security.Cryptography.DataProtectionScope]::CurrentUser;[Console]::Out.Write([Convert]::ToBase64String([Security.Cryptography.ProtectedData]::${operation}($bytes,$null,$scope)))`;
+    const script = `Add-Type -AssemblyName System.Security;$encodedInput=[Console]::In.ReadToEnd();$bytes=[Convert]::FromBase64String($encodedInput);$scope=[Security.Cryptography.DataProtectionScope]::CurrentUser;[Console]::Out.Write([Convert]::ToBase64String([Security.Cryptography.ProtectedData]::${operation}($bytes,$null,$scope)))`;
     const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script], { input: encoded, encoding: 'utf8', timeout: 5000, windowsHide: true });
     if (result.status !== 0 || !result.stdout) throw new Error('Windows protected storage is unavailable');
     return Buffer.from(result.stdout.trim(), 'base64');
