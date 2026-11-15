@@ -4265,3 +4265,8 @@ html[dir="rtl"] .apple-switch input:checked + .apple-switch-slider::before {
   user-select: none;
   -webkit-user-drag: none;
 }
+
+.assistant-project-form:not([hidden]) { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; }
+.assistant-project-form label { font-size: 12px; color: var(--text-secondary); }
+.assistant-project-form .modal-input { width: 100%; box-sizing: border-box; }
+.assistant-project-form-actions { display: flex; flex-wrap: wrap; gap: 6px; }

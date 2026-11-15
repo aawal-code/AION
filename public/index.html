@@ -1005,13 +1005,23 @@
             <aside class="assistant-projects-sidebar">
               <div class="assistant-projects-header">
                 <span class="assistant-projects-title">Projects</span>
-                <button class="btn-subtle" id="btnNewProject" type="button" title="New Project">
+                <button class="btn-subtle" id="btnNewProject" type="button" title="New Project" aria-label="New project" aria-expanded="false" aria-controls="newProjectForm">
                   <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
                   </svg>
                 </button>
               </div>
+              <form id="newProjectForm" class="assistant-project-form" hidden>
+                <label for="newProjectName">Project name</label>
+                <input class="modal-input" id="newProjectName" maxlength="160" required>
+                <label for="newProjectPath">Folder path (reference only)</label>
+                <input class="modal-input" id="newProjectPath" maxlength="2048" placeholder="Optional">
+                <label for="newProjectContext">Project context</label>
+                <textarea class="modal-input" id="newProjectContext" rows="3" maxlength="32000" placeholder="Optional"></textarea>
+                <div class="assistant-project-form-actions"><button class="btn-secondary" id="cancelNewProject" type="button">Cancel</button><button class="btn-primary" type="submit">Create</button></div>
+                <p id="newProjectError" role="alert" hidden></p>
+              </form>
               <div class="assistant-projects-list" id="assistantProjectsList">
                 <!-- Dynamically populated: AION, etc. -->
               </div>

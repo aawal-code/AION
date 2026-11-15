@@ -263,7 +263,7 @@ export async function loadProjectMessages(projectId, specificSessionId = null) {
     renderChatMessages([
       {
         role: 'assistant',
-        content: `Welcome to **${cachedProjects.find((p) => p.id === projectId)?.name || 'AION'}** Assistant Workspace.\n\nChoose **Ask** for instant Q&A, **Plan** for architectural roadmaps, or **Execute** to stream commands directly to your configured BYOCLI.`,
+        content: `Welcome to **${cachedProjects.find((p) => p.id === projectId)?.name || 'AION'}** Assistant Workspace.\n\nChoose **Ask** for questions or **Plan** for a read-only plan. Configure an API provider in Preferences. Execution is currently unavailable.`,
         timestamp: new Date().toISOString(),
       },
     ]);
@@ -474,35 +474,22 @@ function setupModeToggle() {
  * New Project Button wiring
  */
 function setupNewProjectButton() {
-  const btn = document.getElementById('btnNewProject');
-  btn?.addEventListener('click', async () => {
-    const name = window.prompt('Enter new Project Name (e.g. AION, Core):');
-    if (!name || !name.trim()) return;
-
-    const pathVal = window.prompt('Enter Project Working Directory (or leave empty):', '');
-    const context = window.prompt('Enter Pinned Context / Mission description:', `${name} Workspace`);
-
+  const button = document.getElementById('btnNewProject');
+  const form = document.getElementById('newProjectForm');
+  const name = document.getElementById('newProjectName');
+  const error = document.getElementById('newProjectError');
+  const setOpen = (open) => { form.hidden = !open; button.setAttribute('aria-expanded', String(open)); if (open) name.focus(); else button.focus(); };
+  button?.addEventListener('click', () => setOpen(form.hidden));
+  document.getElementById('cancelNewProject')?.addEventListener('click', () => { form.reset(); error.hidden = true; setOpen(false); });
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault(); error.hidden = true;
+    const submit = form.querySelector('[type="submit"]'); submit.disabled = true;
     try {
-      const res = await assistantFetch('/api/assistant/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          path: (pathVal || '').trim(),
-          pinned_context: (context || '').trim(),
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.status === 'ok') {
-        showToast(`Project '${data.project.name}' created`, 'check');
-        await loadProjects();
-        selectProject(data.project.id);
-      } else {
-        showToast(data.error || 'Failed creating project', 'alert');
-      }
-    } catch (err) {
-      showToast(`Error: ${err.message}`, 'alert');
-    }
+      const res = await assistantFetch('/api/assistant/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.value.trim(), path: document.getElementById('newProjectPath').value.trim(), pinned_context: document.getElementById('newProjectContext').value.trim() }) });
+      const data = await res.json(); if (!res.ok || data.status !== 'ok') throw new Error(data.error || 'Could not create project');
+      form.reset(); setOpen(false); await loadProjects(); await selectProject(data.project.id); showToast('Project created', 'check');
+    } catch (err) { error.textContent = err.message; error.hidden = false; }
+    finally { submit.disabled = false; }
   });
 }
 
