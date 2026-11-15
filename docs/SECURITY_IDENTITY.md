@@ -22,6 +22,8 @@ The router assigns a required capability before dispatching protected APIs. Each
 
 Initial Owner enrollment requires a five-minute bootstrap session minted after the native host proves its startup secret, and may occur only when no active Owner exists. That bootstrap session cannot authorize normal API calls. The server returns a 256-bit recovery key exactly once and persists only a salted SHA-256 verifier. Recovery requires that key plus a new verified native-local bootstrap, revokes active owners/sessions, creates a replacement Owner, and rotates the recovery key. Recovery restores authority only; it does not recreate project data.
 
+An Owner can create a five-minute pairing invitation inside AION. The locally generated QR payload contains only `AION-PAIR:<invitation-id>`; it carries neither a session credential nor authority. A joining device submits an Ed25519 public key exactly once, then the Owner must enter the displayed matching code and choose a permitted role/grant set. Claim and approval transitions are transactional and auditable. This is an enrollment foundation only: it does not yet provide a reachable encrypted multi-host transport.
+
 ## Persistence and operations
 
 `data/security.sqlite` is a schema-versioned SQLite store with WAL, foreign keys, transactional owner/revocation/recovery changes, scoped desktop-bootstrap hashes, and append-only audit events. It stores public keys, role grants, hashes of opaque sessions/challenges, recovery-key verification material, and audit metadata—never raw device private keys, raw sessions, or recovery keys. On Windows, API credentials are DPAPI CurrentUser protected; legacy deterministic vault bytes are copied to `vault.legacy.enc` before a successful atomic migration.

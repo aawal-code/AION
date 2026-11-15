@@ -3,7 +3,8 @@ import { extractToken, isLocalhost, verifyLocalAuthSecret } from '../services/au
 import {
   authenticateChallenge, authorize, createChallenge, createDevice, enrollInitialOwner,
   getDesktopBootstrapContext, getIdentityStatus, issueDesktopBootstrap, listAuditEvents,
-  listDevices, listSessions, recoverOwner, revokeDevice, revokeSession, rotateRecoveryKey,
+  listDevices, listPairingInvitations, listSessions, recoverOwner, revokeDevice, revokeSession, rotateRecoveryKey,
+  createPairingInvitation, claimPairingInvitation, approvePairingInvitation, getPairingInvitationStatus,
 } from '../services/identity-store.js';
 
 export function readJsonBody(req, maxSize = 64 * 1024) {
@@ -76,6 +77,13 @@ export async function handleAuthRoutes(req, res, urlPath) {
   }
   if (urlPath === '/api/auth/challenge' && req.method === 'POST') { try { return sendJson(res, 200, { status: 'ok', ...(await createChallenge((await readJsonBody(req)).deviceId)) }); } catch (err) { return error(res, err); } }
   if (urlPath === '/api/auth/authenticate' && req.method === 'POST') return authenticate(req, res);
+  if (urlPath === '/api/auth/pairing/claim' && req.method === 'POST') { try { return sendJson(res, 202, { status: 'ok', ...(await claimPairingInvitation(await readJsonBody(req))) }); } catch (err) { return error(res, err); } }
+  const pairingStatus = urlPath.match(/^\/api\/auth\/pairing\/([^/]+)\/status$/);
+  if (pairingStatus && req.method === 'GET') { try { return sendJson(res, 200, { status: 'ok', ...(await getPairingInvitationStatus(decodeURIComponent(pairingStatus[1]))) }); } catch (err) { return error(res, err); } }
+  if (urlPath === '/api/auth/pairing/invitations' && req.method === 'POST') { const actor = await identityContext(req, 'identity:manage'); if (!actor) return sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); try { return sendJson(res, 201, { status: 'ok', ...(await createPairingInvitation(actor)) }); } catch (err) { return error(res, err); } }
+  if (urlPath === '/api/auth/pairing/invitations' && req.method === 'GET') { const actor = await identityContext(req, 'identity:manage'); return actor ? sendJson(res, 200, { status: 'ok', invitations: await listPairingInvitations() }) : sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); }
+  const pairingApproval = urlPath.match(/^\/api\/auth\/pairing\/([^/]+)\/approve$/);
+  if (pairingApproval && req.method === 'POST') { const actor = await identityContext(req, 'identity:manage'); if (!actor) return sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); try { return sendJson(res, 201, { status: 'ok', ...(await approvePairingInvitation({ ...(await readJsonBody(req)), invitationId: decodeURIComponent(pairingApproval[1]) }, actor)) }); } catch (err) { return error(res, err); } }
   if (urlPath === '/api/auth/enroll-owner' && req.method === 'POST') return protectedAction(req, res, 'enroll-owner');
   if (urlPath === '/api/auth/recover-owner' && req.method === 'POST') return protectedAction(req, res, 'recover-owner');
   if (urlPath === '/api/auth/enroll-device' && req.method === 'POST') return protectedAction(req, res, 'enroll-device');

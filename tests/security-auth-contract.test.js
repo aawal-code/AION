@@ -37,6 +37,13 @@ test('security contract rejects local impostors and enforces signed cookie sessi
     assert.equal((await fetch(`${origin}/api/auth/devices`, { headers: { cookie: sessionJar } })).status, 200);
     assert.equal((await fetch(`${origin}/api/auth/recovery/rotate`, { method: 'POST', headers: { cookie: sessionJar, origin, 'content-type': 'application/json' }, body: '{}' })).status, 403);
     assert.equal((await fetch(`${origin}/api/auth/recovery/rotate`, { method: 'POST', headers: header(sessionJar, sessionCsrf, origin), body: '{}' })).status, 200);
+    const invitationResponse = await fetch(`${origin}/api/auth/pairing/invitations`, { method: 'POST', headers: header(sessionJar, sessionCsrf, origin), body: '{}' });
+    assert.equal(invitationResponse.status, 201, 'only an Owner session creates a pairing invitation'); const invitation = await invitationResponse.json();
+    assert.match(invitation.qrPayload, /^AION-PAIR:/, 'the QR payload contains an invitation identifier, not a session token');
+    const joining = crypto.generateKeyPairSync('ed25519');
+    assert.equal((await fetch(`${origin}/api/auth/pairing/claim`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ invitationId: invitation.invitationId, name: 'Synthetic joiner', publicKey: joining.publicKey.export({ type: 'spki', format: 'pem' }) }) })).status, 202);
+    assert.equal((await fetch(`${origin}/api/auth/pairing/${invitation.invitationId}/approve`, { method: 'POST', headers: header(sessionJar, sessionCsrf, origin), body: JSON.stringify({ verificationCode: invitation.verificationCode, role: 'limited' }) })).status, 201);
+    assert.equal((await fetch(`${origin}/api/auth/pairing/${invitation.invitationId}/approve`, { method: 'POST', headers: header(sessionJar, sessionCsrf, origin), body: JSON.stringify({ verificationCode: invitation.verificationCode }) })).status, 400, 'approval replay is rejected');
     assert.equal((await fetch(`${origin}/api/auth/authenticate`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.challengeId, signature }) })).status, 400, 'challenge replay is rejected');
   } finally {
     child.kill();

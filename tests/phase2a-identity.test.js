@@ -33,6 +33,16 @@ test('Master spec §2: identity store enforces signed role sessions, explicit gr
     await assert.rejects(() => s.createDevice({name:'escalate', role:'limited', capabilities:['conversation:write'], publicKey:crypto.generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})}, {role:'owner',deviceId:enrolled.deviceId}), /permitted/i);
     const listed = await s.listDevices();
     assert.deepEqual(listed.find((device) => device.id === limitedDevice.id).capabilities, []);
+    const invitation = await s.createPairingInvitation({role:'owner',deviceId:enrolled.deviceId});
+    assert.match(invitation.qrPayload, /^AION-PAIR:[0-9a-f-]{36}$/);
+    const joining = crypto.generateKeyPairSync('ed25519');
+    await s.claimPairingInvitation({invitationId: invitation.invitationId, name:'Synthetic paired device', publicKey:joining.publicKey.export({type:'spki',format:'pem'})});
+    await assert.rejects(() => s.claimPairingInvitation({invitationId: invitation.invitationId, name:'replay', publicKey:joining.publicKey.export({type:'spki',format:'pem'})}), /already used|concurrently/i);
+    await assert.rejects(() => s.approvePairingInvitation({invitationId: invitation.invitationId, verificationCode:'000000'}, {role:'owner',deviceId:enrolled.deviceId}), /code/i);
+    const paired = await s.approvePairingInvitation({invitationId: invitation.invitationId, verificationCode:invitation.verificationCode, role:'limited'}, {role:'owner',deviceId:enrolled.deviceId});
+    assert.equal(paired.role, 'limited');
+    assert.equal((await s.getPairingInvitationStatus(invitation.invitationId)).status, 'approved');
+    await assert.rejects(() => s.approvePairingInvitation({invitationId: invitation.invitationId, verificationCode:invitation.verificationCode}, {role:'owner',deviceId:enrolled.deviceId}), /awaiting/i);
     await assert.rejects(() => s.authenticateChallenge({challengeId:challenge.challengeId, signature}), /replay|invalid|expired/i);
     await s.revokeDevice(device.id, {role:'owner',deviceId:enrolled.deviceId});
     assert.equal(await s.getSessionContext(session.token), null);

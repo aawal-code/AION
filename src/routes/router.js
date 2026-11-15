@@ -660,7 +660,7 @@ export async function handleRequest(req, res) {
   // synchronizer token is required before any state change; signed-device
   // challenge exchange is the sole pre-session exception.
   const stateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
-  const csrfExempt = urlPath === '/api/auth/challenge' || urlPath === '/api/auth/authenticate';
+  const csrfExempt = urlPath === '/api/auth/challenge' || urlPath === '/api/auth/authenticate' || urlPath === '/api/auth/pairing/claim';
   if (stateChanging && urlPath.startsWith('/api/') && !csrfExempt && (!origin || origin !== expectedOrigin || !verifyCsrf(req))) {
     return sendJson(res, 403, { status: 'error', error: 'Same-origin CSRF verification required' });
   }

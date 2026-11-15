@@ -1495,6 +1495,17 @@
           <textarea class="modal-input security-key-input" id="securityDeviceKey" rows="4" spellcheck="false" placeholder="-----BEGIN PUBLIC KEY-----"></textarea>
           <button class="btn-primary" id="btnSecurityEnrollDevice" type="button">Approve device</button>
         </div>
+        <div class="settings-group" id="securityPairing" hidden>
+          <div class="settings-group-title">Pair a device</div>
+          <p class="security-note">Create a five-minute invitation. The QR code contains only an invitation identifier; it is not a session credential. Approve a claimed device only after its matching code is confirmed.</p>
+          <button class="btn-primary" id="btnSecurityCreatePairing" type="button">Create pairing invitation</button>
+          <div id="securityPairingInvitation" class="security-one-time" hidden>
+            <div id="securityPairingQr" aria-label="Pairing invitation QR code"></div>
+            <p>Matching verification code: <code id="securityPairingCode"></code></p>
+            <p id="securityPairingExpiry" class="security-note"></p>
+          </div>
+          <div id="securityPairingRequests" class="security-list"></div>
+        </div>
         <div class="settings-group" id="securityDevicesGroup" hidden><div class="settings-group-title">Approved devices</div><div id="securityDevicesList" class="security-list"></div></div>
         <div class="settings-group" id="securitySessionsGroup" hidden><div class="settings-group-title">Active sessions</div><div id="securitySessionsList" class="security-list"></div></div>
         <div class="settings-group" id="securityAuditGroup" hidden><div class="settings-group-title">Security activity</div><div id="securityAuditList" class="security-list"></div></div>
