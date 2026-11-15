@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { enrollInitialOwner, createPairingInvitation, claimPairingInvitation, approvePairingInvitation, revokeDevice } from '../../src/services/identity-store.js';
+import { enrollInitialOwner, getIdentityStatus, createPairingInvitation, claimPairingInvitation, approvePairingInvitation, revokeDevice } from '../../src/services/identity-store.js';
 import { getTransportIdentity } from '../../src/services/transport-identity.js';
 import { startHostTransport, connectHostTransport } from '../../src/services/host-transport.js';
 import { createReplicationEvent, listOutboundEvents, listRecordHeads, listRecordHistory } from '../../src/services/replication-store.js';
@@ -8,6 +8,7 @@ let owner; let identity; let listener; let connection;
 function ownerKey() { return crypto.generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' }); }
 async function command(message) {
   if (message.type === 'init') { identity = await getTransportIdentity(message.name); owner = await enrollInitialOwner({ name: `${message.name} owner`, publicKey: ownerKey() }); return { certificate: identity.certificate, publicKey: identity.devicePublicKey, binding: identity.signCertificateBinding(), owner }; }
+  if (message.type === 'resume') { identity = await getTransportIdentity(message.name); const status = await getIdentityStatus(); if (!status.owner) throw new Error('Host has no Owner to resume'); owner = { deviceId: status.owner.id, role: 'owner' }; return { certificate: identity.certificate, publicKey: identity.devicePublicKey, binding: identity.signCertificateBinding(), owner }; }
   if (message.type === 'pair') { const invitation = await createPairingInvitation(owner); await claimPairingInvitation({ invitationId: invitation.invitationId, name: message.peerName, publicKey: message.publicKey, transportCertificate: message.certificate, transportBindingSignature: message.binding }); return approvePairingInvitation({ invitationId: invitation.invitationId, verificationCode: invitation.verificationCode, role: 'trusted', capabilities: ['sync:replicate'] }, owner); }
   if (message.type === 'start') { listener = await startHostTransport({ port: 0, localDeviceId: message.localDeviceId, hostId: message.name }); return { port: listener.port }; }
   if (message.type === 'event') return createReplicationEvent(message.event);

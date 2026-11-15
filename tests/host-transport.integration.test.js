@@ -41,3 +41,15 @@ test('two independent hosts authenticate over TLS and durably replicate over TCP
   await assert.rejects(() => a.call('deliver', { port: listening.port, localDeviceId: aInB.deviceId, certificate: bi.certificate, name: 'A' }), /authorization|closed|failed/i);
   assert.equal((await a.call('pending')).count, 1, 'revoked peer cannot receive pending protected events');
 });
+
+test('outstanding replication work survives a sending-host process restart', { timeout: 60_000 }, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aion-restart-host-')); let a = host('a', root); const b = host('b', root); t.after(async () => { await a.close(); await b.close(); fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); });
+  const ai = await a.call('init'), bi = await b.call('init');
+  const bInA = await a.call('pair', { peerName: 'B', publicKey: bi.publicKey, certificate: bi.certificate, binding: bi.binding });
+  const aInB = await b.call('pair', { peerName: 'A', publicKey: ai.publicKey, certificate: ai.certificate, binding: ai.binding });
+  const listening = await b.call('start', { localDeviceId: bInA.deviceId, name: 'B' });
+  await a.call('event', { event: { recordId: 'restart-project', recordType: 'project-metadata', revision: 1, payload: { title: 'Queued before restart' } } });
+  await a.close(); a = host('a', root); await a.call('resume', { name: 'A' });
+  assert.equal((await a.call('deliver', { port: listening.port, localDeviceId: aInB.deviceId, certificate: bi.certificate, name: 'A' })).delivered, 1);
+  assert.deepEqual((await b.call('heads')).find((head) => head.recordId === 'restart-project').payload, { title: 'Queued before restart' });
+});
