@@ -203,6 +203,22 @@ export async function authorizeTransportPeer({ deviceId, certificate, exporter, 
   if (!crypto.verify(null, channelPayload(transport.fingerprint, exporter), device.public_key, Buffer.from(String(signature), 'base64url'))) return null;
   return { deviceId: device.id, role: device.role, capabilities: grants, certificateFingerprint: transport.fingerprint, type: 'transport' };
 }
+export async function isTransportPeerAuthorized({ deviceId, certificate, capability = 'sync:replicate' }) {
+  const transport = certificateBinding(certificate); const db = await database();
+  const device = db.prepare('SELECT id,role,revoked_at FROM devices WHERE id=?').get(String(deviceId));
+  const binding = db.prepare('SELECT fingerprint FROM device_transport_certificates WHERE device_id=?').get(String(deviceId));
+  if (!device || device.revoked_at || !binding || binding.fingerprint !== transport.fingerprint) return null;
+  const grants = db.prepare('SELECT capability FROM device_capabilities WHERE device_id=?').all(device.id).map((row) => row.capability);
+  return hasCapability(device.role, capability, grants) ? { deviceId: device.id, role: device.role, capabilities: grants, certificateFingerprint: transport.fingerprint, type: 'transport' } : null;
+}
+// The TLS listener uses this only as a trust store for the TLS handshake.  It
+// still performs the device-id, certificate pin, capability and channel-proof
+// checks above before accepting an application message.
+export async function listApprovedTransportCertificates() {
+  const db = await database();
+  return db.prepare(`SELECT c.certificate FROM device_transport_certificates c
+    JOIN devices d ON d.id=c.device_id WHERE d.revoked_at IS NULL`).all().map((row) => row.certificate);
+}
 export async function revokeDevice(deviceId, actor) {
   if (!actor || actor.role !== ROLES.OWNER) throw new Error('Owner authorization required'); const db = await database(); db.exec('BEGIN IMMEDIATE');
   try { const row = db.prepare('SELECT role FROM devices WHERE id=? AND revoked_at IS NULL').get(deviceId); if (!row) throw new Error('Device is already revoked or unknown'); if (row.role === ROLES.OWNER) throw new Error('Owner access can only be changed through recovery'); db.prepare('UPDATE devices SET revoked_at=? WHERE id=?').run(now(), deviceId); db.prepare('UPDATE sessions SET revoked_at=? WHERE device_id=? AND revoked_at IS NULL').run(now(), deviceId); audit(db, 'device.revoked', deviceId, { actor: actor.deviceId }); db.exec('COMMIT'); }

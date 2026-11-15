@@ -53,4 +53,10 @@ export async function applyInboundEvent(event) {
     db.prepare('INSERT INTO inbound_events(event_id,received_at,applied_at) VALUES (?,?,?)').run(event.eventId,receivedAt,receivedAt); db.exec('COMMIT'); return { status: 'applied' };
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
+export async function listRecordHeads() {
+  return (await database()).prepare('SELECT record_id AS recordId,record_type AS recordType,revision,event_id AS eventId,payload,updated_at AS updatedAt FROM record_heads ORDER BY record_id').all().map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
+}
+export async function listRecordHistory(recordId) {
+  return (await database()).prepare('SELECT event_id AS eventId,origin_host_id AS originHostId,record_id AS recordId,record_type AS recordType,revision,payload,created_at AS createdAt FROM replication_events WHERE record_id=? ORDER BY created_at,event_id').all(String(recordId)).map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
+}
 export async function resetReplicationStoreForTests() { if (dbPromise) { const db = await dbPromise; db.close(); dbPromise = null; } }
