@@ -9,9 +9,11 @@ import {
   updateSession,
   deleteSession,
   getMessages,
+  getRecentMessages,
   addMessage,
 } from '../services/assistant-db.js';
-import { routePrompt } from '../services/llm-provider.js';
+import { routePrompt, streamPrompt } from '../services/llm-provider.js';
+import { once } from 'node:events';
 import { saveApiKey, deleteApiKey, getVaultStatus } from '../services/vault.js';
 import { loadConfig } from '../services/config.js';
 import { logEvent } from '../services/sse.js';
@@ -50,6 +52,10 @@ function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 }
+
+let activeStreams = 0;
+const MAX_ACTIVE_STREAMS = 4;
+const streamingSessions = new Set();
 
 /**
  * Dispatches /api/assistant/* routes
@@ -173,6 +179,39 @@ export async function handleAssistantRoutes(req, res, urlPath) {
     }
   }
 
+  // Streaming is bounded and cancelled when the client disconnects.
+  if (urlPath === '/api/assistant/chat/stream' && method === 'POST') {
+    if (activeStreams >= MAX_ACTIVE_STREAMS) return sendJson(res, 429, { status: 'error', error: 'Too many active chats' });
+    let body; try { body = await readJsonBody(req, 64 * 1024); } catch (error) { return sendJson(res, error.statusCode || 400, { status: 'error', error: error.message }); }
+    const { prompt, mode = 'ask', projectId = 'aion', sessionId: requestedSession, provider, model, runtimeMode } = body;
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 32000 || !['ask', 'plan'].includes(mode) || runtimeMode !== 'api') return sendJson(res, 400, { status: 'error', error: 'A valid Ask or Plan request and API provider are required' });
+    const project = await getProject(projectId); if (!project) return sendJson(res, 404, { status: 'error', error: 'Project not found' });
+    if (project.archived_at) return sendJson(res, 409, { status: 'error', error: 'Restore this project before starting a conversation' });
+    let sessionId = requestedSession;
+    if (sessionId) { const session = await getSession(sessionId); if (!session || session.project_id !== projectId) return sendJson(res, 400, { status: 'error', error: 'Conversation does not belong to this project' }); }
+    if (activeStreams >= MAX_ACTIVE_STREAMS) return sendJson(res, 429, { status: 'error', error: 'Too many active chats' });
+    activeStreams++; const controller = new AbortController(); let ownsSessionLock = false;
+    const disconnect = () => { if (!res.writableEnded) controller.abort(); }; res.once('close', disconnect);
+    try {
+      if (!sessionId) sessionId = (await createSession({ projectId, mode })).id;
+      if (streamingSessions.has(sessionId)) return sendJson(res, 409, { status: 'error', error: 'This conversation already has an active response' });
+      streamingSessions.add(sessionId); ownsSessionLock = true;
+      if (res.destroyed) { controller.abort(); return; }
+      const history = await getRecentMessages(sessionId);
+      const userMessage = await addMessage({ sessionId, role: 'user', content: prompt.trim(), metadata: { mode, runtimeMode, provider, model } });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
+      const sendEvent = async (event, data) => { if (controller.signal.aborted) throw new Error('Chat cancelled'); if (!res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)) await once(res, 'drain', { signal: controller.signal }); };
+      await sendEvent('session', { sessionId, userMessage });
+      const result = await streamPrompt({ prompt: prompt.trim(), mode, provider, model, pinnedContext: project.pinned_context || '', history, signal: controller.signal, onText: async (text) => sendEvent('delta', { text }) });
+      if (controller.signal.aborted) return;
+      const assistantMessage = await addMessage({ sessionId, role: 'assistant', content: result.content, metadata: { mode, runtimeMode, provider: result.provider, model: result.model, usage: result.usage } });
+      await sendEvent('done', { assistantMessage }); res.end();
+    } catch (error) {
+      if (!controller.signal.aborted && !res.destroyed) { if (!res.headersSent) sendJson(res, error.statusCode || 500, { status: 'error', error: 'Unable to start chat' }); else { res.end(`event: error\ndata: ${JSON.stringify({ error: error.statusCode === 503 ? error.message : (error.publicMessage || 'AI response failed or was interrupted.') })}\n\n`); } }
+    } finally { activeStreams--; if (ownsSessionLock) streamingSessions.delete(sessionId); res.off('close', disconnect); }
+    return;
+  }
+
   // 3. Chat Endpoint (Ask, Plan, Execute)
   // POST /api/assistant/chat
   if (urlPath === '/api/assistant/chat' && method === 'POST') {
@@ -210,7 +249,7 @@ export async function handleAssistantRoutes(req, res, urlPath) {
       } else {
         const newSess = await createSession({ projectId, mode }); sessionId = newSess.id;
       }
-      const history = await getMessages(sessionId);
+      const history = await getRecentMessages(sessionId);
       const userMessage = await addMessage({ sessionId, role: 'user', content: prompt.trim(), metadata: { mode, runtimeMode, provider, model } });
 
       let llmResult;

@@ -205,6 +205,11 @@ export async function getMessages(sessionId) {
   `).all(sessionId);
 }
 
+export async function getRecentMessages(sessionId) {
+  const db = await getDb();
+  return db.prepare('SELECT * FROM (SELECT rowid AS sequence, * FROM messages WHERE session_id=? ORDER BY timestamp DESC, rowid DESC LIMIT 6) ORDER BY timestamp ASC, sequence ASC').all(sessionId);
+}
+
 export async function addMessage({ id, sessionId, role, content, timestamp = null, metadata = null }) {
   const db = await getDb();
   const msgId = id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;

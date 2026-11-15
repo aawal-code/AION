@@ -15,7 +15,13 @@ process.env.AION_OPENAI_KEY = 'synthetic-test-only';
 const originalFetch = globalThis.fetch; const sent = [];
 globalThis.fetch = async (url, options = {}) => {
   if (String(url) === 'https://api.openai.com/v1/chat/completions') {
-    sent.push(JSON.parse(options.body));
+    const request = JSON.parse(options.body); sent.push(request);
+    if (request.stream) {
+      const cancel = request.messages.at(-1).content === 'cancel this stream';
+      const payload = 'data: {"choices":[{"delta":{"content":"Stream "}}]}\n\ndata: {"choices":[{"delta":{"content":"answer"}}]}\n\ndata: [DONE]\n\n';
+      if (cancel) return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Partial"}}]}\n\n')); options.signal.addEventListener('abort', () => controller.error(new Error('aborted')), { once: true }); } }), { status: 200 });
+      return new Response(new ReadableStream({ start(controller) { const bytes = new TextEncoder().encode(payload); for (let i = 0; i < bytes.length; i += 7) controller.enqueue(bytes.slice(i, i + 7)); controller.close(); } }), { status: 200 });
+    }
     return new Response(JSON.stringify({ choices: [{ message: { content: `Synthetic answer ${sent.length}` } }], usage: {} }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
   return originalFetch(url, options);
@@ -66,4 +72,18 @@ test('Master spec §2/§5/§6: authenticated chat persists project-bound convers
   response = await fetch(origin + `/api/assistant/sessions/${first.sessionId}/messages`, { headers: { cookie: jar } }); const messages = (await response.json()).messages;
   assert.deepEqual(messages.map((m) => m.content), ['First message', 'Synthetic answer 1', 'Second message', 'Synthetic answer 2']);
   closeDb(); response = await fetch(origin + `/api/assistant/sessions/${first.sessionId}/messages`, { headers: { cookie: jar } }); assert.equal((await response.json()).messages.length, 4);
+  response = await post('/api/assistant/chat/stream', { ...chat, sessionId: first.sessionId, prompt: 'stream it' }, h); assert.equal(response.status, 200); const streamText = await response.text();
+  assert.match(streamText, /event: delta/); assert.match(streamText, /event: done/); assert.match(streamText, /Stream answer/);
+  response = await fetch(origin + `/api/assistant/sessions/${first.sessionId}/messages`, { headers: { cookie: jar } }); assert.equal((await response.json()).messages.at(-1).content, 'Stream answer');
+  const cancel = new AbortController(); response = await fetch(origin + '/api/assistant/chat/stream', { method: 'POST', headers: h, body: JSON.stringify({ ...chat, sessionId: first.sessionId, prompt: 'cancel this stream' }), signal: cancel.signal });
+  const reader = response.body.getReader(); let partial = ''; while (!partial.includes('event: delta')) { const next = await reader.read(); partial += new TextDecoder().decode(next.value); }
+  cancel.abort(); await new Promise((resolve) => setTimeout(resolve, 100));
+  response = await fetch(origin + `/api/assistant/sessions/${first.sessionId}/messages`, { headers: { cookie: jar } }); assert.equal((await response.json()).messages.at(-1).content, 'cancel this stream');
+  process.env.ANTHROPIC_API_KEY = 'synthetic-only'; const { streamPrompt } = await import('../src/services/llm-provider.js'); let observed = '';
+  globalThis.fetch = async () => new Response('event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Claude reply"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n');
+  const result = await streamPrompt({ prompt: 'test', mode: 'plan', provider: 'anthropic', history: [], signal: new AbortController().signal, onText: async (part) => { observed += part; } }); assert.equal(result.content, 'Claude reply'); assert.equal(observed, 'Claude reply');
+  globalThis.fetch = async () => new Response('data: {"choices":[{"delta":{"content":"incomplete"}}]}\n\n');
+  await assert.rejects(streamPrompt({ prompt: 'test', mode: 'ask', provider: 'openai', history: [], signal: new AbortController().signal, onText: async () => {} }), /before completion/);
+
+
 });

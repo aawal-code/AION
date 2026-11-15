@@ -13,7 +13,7 @@ test('Master spec §2/§3/§5: browser sends one project-aware chat request with
     if (p.endsWith('/folders')) { if (req.method() === 'POST') folders.push(req.postDataJSON()); data = { status: 'ok', folders }; }
     if (p.endsWith('/sessions')) data = { status: 'ok', sessions: [] };
     if (p === '/api/config') data = { status: 'ok', config: { executionTarget: { runtimeMode: 'api', apiProvider: 'openai', apiModel: 'test' } } };
-    if (p === '/api/assistant/chat') { requests.push({ headers: req.headers(), body: req.postDataJSON() }); data = { status: 'ok', sessionId: 'session1', assistantMessage: { content: 'Answer' } }; }
+    if (p === '/api/assistant/chat/stream') { requests.push({ headers: req.headers(), body: req.postDataJSON() }); return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: session\ndata: {"sessionId":"session1"}\n\nevent: delta\ndata: {"text":"Answer"}\n\nevent: done\ndata: {"assistantMessage":{"content":"Answer"}}\n\n' }); }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) }); });
   await page.goto(base, { waitUntil: 'domcontentloaded' }); await page.waitForTimeout(700);
   await page.locator('#navItemAssistant').click();

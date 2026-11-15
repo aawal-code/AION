@@ -22,6 +22,7 @@ let cachedProjects = [];
 let cachedSessions = [];
 let activeProjectId = 'aion';
 let activeSessionId = null;
+let activeChatController = null;
 let activeMode = 'ask'; // 'ask' | 'plan' | 'execute'
 let speechRecognitionInstance = null;
 let isListening = false;
@@ -203,6 +204,7 @@ export function renderProjectList() {
  * Selects active project
  */
 export async function selectProject(projectId) {
+  activeChatController?.abort();
   activeProjectId = projectId;
   activeSessionId = null;
   renderProjectList();
@@ -640,81 +642,32 @@ export function renderChatMessages(messages) {
  * Handles Prompt Submission from Command Bar
  */
 export async function sendAssistantPrompt(prompt) {
-  const cleanPrompt = (prompt || '').trim();
-  if (!cleanPrompt) return;
-
+  const cleanPrompt = (prompt || '').trim(); if (!cleanPrompt) return;
+  if (activeChatController) { showToast('A response is already in progress.', 'alert'); return; }
+  if (activeMode === 'execute') { showToast('Execution is unavailable until an approved task runner is ready.', 'alert'); return; }
   const container = document.getElementById('chatMessagesContainer');
-
-  // 1. Immediately append user message to feed
-  const userMsgEl = document.createElement('div');
-  userMsgEl.className = 'chat-message user-message';
-  userMsgEl.innerHTML = `
-    <div class="message-bubble user-bubble">
-      <div class="message-content">${escapeHtml(cleanPrompt)}</div>
-      <div class="message-time">Just now</div>
-    </div>
-  `;
-  container?.appendChild(userMsgEl);
-  if (container) container.scrollTop = container.scrollHeight;
-
-  // 2. If Execute Mode and Runtime is CLI -> Live SSE Stream in Dark Terminal Block
-  if (activeMode === 'execute' && currentTarget.runtimeMode === 'cli') {
-    await streamExecuteMode(cleanPrompt);
-    return;
-  }
-
-  // 3. If Ask, Plan, or Direct API Execute Mode -> POST /api/assistant/chat
-  const loadingEl = document.createElement('div');
-  loadingEl.className = 'chat-message assistant-message';
-  loadingEl.innerHTML = `
-    <div class="message-bubble assistant-bubble">
-      <div class="message-content" style="display: flex; align-items: center; gap: 8px;">
-        <span class="status-dot online" style="animation: pulseMic 1s infinite;"></span>
-        <span>${activeMode === 'plan' ? 'Generating execution plan...' : (activeMode === 'execute' ? 'Synthesizing CLI actions...' : 'Thinking...')}</span>
-      </div>
-    </div>
-  `;
-  container?.appendChild(loadingEl);
-  if (container) container.scrollTop = container.scrollHeight;
-
+  const userEl = document.createElement('div'); userEl.className = 'chat-message user-message'; userEl.innerHTML = `<div class="message-bubble user-bubble"><div class="message-content">${escapeHtml(cleanPrompt)}</div></div>`; container?.appendChild(userEl);
+  const responseEl = document.createElement('div'); responseEl.className = 'chat-message assistant-message';
+  const bubble = document.createElement('div'); bubble.className = 'message-bubble assistant-bubble';
+  const content = document.createElement('div'); content.className = 'message-content'; content.textContent = 'Thinking…';
+  const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn-secondary'; cancel.textContent = 'Cancel response';
+  bubble.append(content, cancel); responseEl.append(bubble); container?.appendChild(responseEl);
+  const controller = new AbortController(); activeChatController = controller; cancel.addEventListener('click', () => controller.abort()); let text = '', done = false;
   try {
-    const res = await assistantFetch('/api/assistant/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: cleanPrompt,
-        mode: activeMode,
-        projectId: activeProjectId,
-        sessionId: activeSessionId,
-        runtimeMode: currentTarget.runtimeMode,
-        cliProfile: currentTarget.cliProfile,
-        provider: currentTarget.apiProvider,
-        model: currentTarget.apiModel,
-      }),
-    });
-
-    const data = await res.json();
-    loadingEl.remove();
-
-    if (data.sessionId) activeSessionId = data.sessionId;
-    if (res.ok && data.status === 'ok') {
-      const assistantEl = document.createElement('div');
-      assistantEl.className = 'chat-message assistant-message';
-      assistantEl.innerHTML = `
-        <div class="message-bubble assistant-bubble">
-          <div class="message-content">${formatMessageContent(data.assistantMessage?.content || data.response?.content)}</div>
-          <div class="message-time">Just now</div>
-        </div>
-      `;
-      container?.appendChild(assistantEl);
-      if (container) container.scrollTop = container.scrollHeight;
-    } else {
-      showToast(data.error || 'Assistant failed to respond', 'alert');
-    }
-  } catch (err) {
-    loadingEl.remove();
-    showToast(`Request error: ${err.message}`, 'alert');
-  }
+    const res = await assistantFetch('/api/assistant/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ prompt: cleanPrompt, mode: activeMode, projectId: activeProjectId, sessionId: activeSessionId, runtimeMode: currentTarget.runtimeMode, provider: currentTarget.apiProvider, model: currentTarget.apiModel }) });
+    if (!res.ok) { const data = await res.json(); throw new Error(data.error || 'Unable to start chat'); }
+    const reader = res.body.getReader(), decoder = new TextDecoder(); let pending = '';
+    const handle = (event) => { if (controller.signal.aborted) throw new Error('Response cancelled'); const lines = event.split(/\r?\n/); const type = lines.find((line) => line.startsWith('event:'))?.slice(6).trim(); const raw = lines.filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n'); if (!raw) return; const data = JSON.parse(raw);
+      if (type === 'session') activeSessionId = data.sessionId;
+      if (type === 'delta') { text += data.text; content.textContent = text; if (container) container.scrollTop = container.scrollHeight; }
+      if (type === 'done') { done = true; content.innerHTML = formatMessageContent(data.assistantMessage.content); }
+      if (type === 'error') throw new Error(data.error || 'AI response failed');
+    };
+    while (true) { const part = await reader.read(); pending += decoder.decode(part.value || new Uint8Array(), { stream: !part.done }); let match; while ((match = /\r?\n\r?\n/.exec(pending))) { handle(pending.slice(0, match.index)); pending = pending.slice(match.index + match[0].length); } if (part.done) break; }
+    if (!done) throw new Error('AI response ended before completion');
+    if (!controller.signal.aborted) await loadProjectMessages(activeProjectId, activeSessionId);
+  } catch (error) { content.textContent = controller.signal.aborted ? 'Response cancelled.' : error.message; }
+  finally { cancel.remove(); if (activeChatController === controller) activeChatController = null; }
 }
 
 /**

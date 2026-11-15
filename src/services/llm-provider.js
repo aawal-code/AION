@@ -186,3 +186,37 @@ async function callAnthropic({ prompt, systemPrompt, model, apiKey, history = []
     usage: data.usage || null,
   };
 }
+
+// Stream only text from the explicitly selected provider. Never persist partial output.
+export async function streamPrompt({ prompt, mode, provider: selected, model: selectedModel, pinnedContext = '', history = [], signal, onText }) {
+  if (!['ask', 'plan'].includes(mode) || typeof prompt !== 'string' || !prompt.trim()) throw new Error('Invalid chat request');
+  const { provider, apiKey } = await resolveActiveProvider(selected);
+  if (!provider || !apiKey) { const error = new Error('The selected AI provider is not configured. Add its credential in Settings.'); error.statusCode = 503; throw error; }
+  const model = selectedModel || DEFAULT_MODELS[provider];
+  const previous = history.slice(-6).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content || '' }));
+  const system = buildSystemPrompt(mode, pinnedContext);
+  const anthropic = provider === 'anthropic';
+  const body = anthropic ? { model, max_tokens: 4096, system, messages: [...previous, { role: 'user', content: prompt }], stream: true } : { model, messages: [{ role: 'system', content: system }, ...previous, { role: 'user', content: prompt }], stream: true };
+  const headers = anthropic ? { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` };
+  const response = await fetch(PROVIDER_ENDPOINTS[provider], { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]) });
+  if (!response.ok || !response.body) { const error = new Error(`AI provider request failed (HTTP ${response.status})`); error.publicMessage = error.message; throw error; }
+  const decoder = new TextDecoder(); let pending = '', content = '', finished = false;
+  const processEvent = async (event) => {
+    const data = event.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
+    if (!data) return; if (data === '[DONE]') { finished = true; return; }
+    let packet; try { packet = JSON.parse(data); } catch { throw new Error('Invalid AI provider stream'); }
+    if (packet.type === 'error' || packet.error) throw new Error('AI provider stream failed');
+    if (packet.type === 'message_stop') finished = true;
+    const text = anthropic ? (packet.type === 'content_block_delta' && packet.delta?.type === 'text_delta' ? packet.delta.text : '') : packet.choices?.[0]?.delta?.content;
+    if (text != null && typeof text !== 'string') throw new Error('Invalid AI provider response');
+    if (text) { content += text; if (Buffer.byteLength(content) > 1024 * 1024) throw new Error('AI response exceeds limit'); await onText(text); }
+  };
+  for await (const chunk of response.body) {
+    pending += decoder.decode(chunk, { stream: true });
+    let match; while ((match = /\r?\n\r?\n/.exec(pending))) { const event = pending.slice(0, match.index); pending = pending.slice(match.index + match[0].length); await processEvent(event); }
+    if (Buffer.byteLength(pending) > 128 * 1024) throw new Error('AI provider stream event exceeds limit');
+  }
+  pending += decoder.decode(); if (pending.trim()) await processEvent(pending);
+  if (!finished || !content.trim()) throw new Error('AI provider stream ended before completion');
+  return { provider, model, content, usage: null };
+}
