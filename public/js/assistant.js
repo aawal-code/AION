@@ -450,7 +450,7 @@ export function setAssistantMode(mode, triggerToast = true) {
     const input = document.getElementById('commandInput');
     if (input) {
       if (activeMode === 'execute') {
-        input.placeholder = 'Run command (e.g. agy -p "check build")...';
+        input.placeholder = 'Use Tasks and approvals to propose a bounded action';
       } else if (activeMode === 'plan') {
         input.placeholder = 'Describe feature or goal to plan...';
       } else {
@@ -472,7 +472,7 @@ function setupModeToggle() {
   document.querySelectorAll('.assistant-mode-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const mode = btn.getAttribute('data-mode');
-      if (mode) setAssistantMode(mode);
+      if (mode) { setAssistantMode(mode); if (mode === 'execute') { const panel = document.getElementById('taskPanel'); if (panel) { panel.open = true; panel.scrollIntoView({ block: 'nearest' }); } } }
     });
   });
 }

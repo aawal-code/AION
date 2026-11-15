@@ -95,6 +95,7 @@ test('Master spec §2/§5/§6: authenticated chat persists project-bound convers
   const sign2 = crypto.sign(null, Buffer.from(challenge2.signingPayload), trustedKey.privateKey).toString('base64url');
   const auth2 = await post('/api/auth/authenticate', { challengeId: challenge2.challengeId, signature: sign2 }, { origin, 'content-type': 'application/json' });
   const jar2 = cookies(auth2), csrf2 = /aion_csrf=([^;]+)/.exec(jar2)[1]; response = await post(`/api/assistant/tasks/${task.id}/approve`, {}, headers(jar2, csrf2)); assert.equal(response.status, 403);
+  response = await post(`/api/assistant/projects/${project.id}/folders`, { path: folderPath }, headers(jar2, csrf2)); assert.equal(response.status, 403);
   response = await post(`/api/assistant/tasks/${task.id}/approve`, {}, h); assert.equal(response.status, 200);
   response = await post(`/api/assistant/tasks/${task.id}/run`, { input: 'changed' }, h); assert.equal(response.status, 409);
   response = await post(`/api/assistant/tasks/${task.id}/run`, {}, h); assert.equal(response.status, 200);
