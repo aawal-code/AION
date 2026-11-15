@@ -1,0 +1,18 @@
+{
+  "name": "aion-core",
+  "version": "1.0.0-beta.1",
+  "description": "Autonomous Interactive Operations Node",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "start": "node src/server.js",
+    "build:win": "powershell -ExecutionPolicy Bypass -File scripts/win/build-win-exe.ps1",
+    "package": "powershell -ExecutionPolicy Bypass -File scripts/win/build-win-exe.ps1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.65.1"
+  }
+}

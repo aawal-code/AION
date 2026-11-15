@@ -1,0 +1,1621 @@
+/**
+ * AION Core Application Controller
+ * Apple-grade Modular UI Architecture
+ * Wires UI shell cleanly to existing backend endpoints with clean placeholders.
+ */
+
+import {
+  getState,
+  subscribe,
+  setActiveTab,
+  setTheme,
+  setCustomColor,
+  resetCustomColors,
+  setDevMode,
+  addActivity,
+  addChatMessage,
+  setAssistantBusy,
+  setSyncthingData,
+  addLog,
+  clearLogs,
+  setLogFilter,
+  setMicListening,
+  setUpdateInfo,
+  initState,
+} from './state.js';
+
+import {
+  t,
+  getLanguage,
+  setLanguage,
+  initLanguage,
+  updateDomTranslations,
+} from './i18n.js';
+
+import { getSvgIcon } from './icons.js';
+import { generateQrSvg } from './qr.js';
+import { initDevicesModule, fetchRunningProcesses, renderDevicesView, selectDevice } from './devices.js';
+import { initMediaModule } from './media.js';
+import { initNav } from './nav.js';
+import { initSettings } from './settings.js';
+import { initScreenControl } from './screen-control.js';
+import { initAssistantWorkspace } from './assistant.js';
+
+// ==========================================================================
+// Service Worker Live Controller Reload (Mobile / Desktop PWA Auto-Refresh)
+// ==========================================================================
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+}
+
+// ==========================================================================
+// Toast Notification Utility
+// ==========================================================================
+export function showToast(message, iconName = 'check') {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = 'toast-item';
+  toast.innerHTML = `
+    <span style="color: var(--color-success);">${getSvgIcon(iconName, 'icon-sm')}</span>
+    <span>${message}</span>
+  `;
+
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-8px) scale(0.95)';
+    toast.style.transition = 'all 0.25s var(--ease-spring)';
+    setTimeout(() => toast.remove(), 260);
+  }, 3200);
+}
+
+if (typeof window !== 'undefined') {
+  window.aionShowToast = showToast;
+}
+
+// ==========================================================================
+// Settings Modal (macOS Preferences Dialog)
+// ==========================================================================
+function setupSettingsModal() {
+  const modal = document.getElementById('settingsModal');
+  const btnOpen = document.getElementById('btnOpenSettings');
+  const btnMobile = document.getElementById('btnMobileSettings');
+  const btnClose = document.getElementById('btnCloseSettings');
+
+  function openSettings() {
+    modal?.classList.add('active');
+    checkAuthStatus();
+    fetchTrustedDevices();
+  }
+
+  function closeSettings() {
+    modal?.classList.remove('active');
+  }
+
+  btnOpen?.addEventListener('click', openSettings);
+  btnMobile?.addEventListener('click', openSettings);
+  btnClose?.addEventListener('click', closeSettings);
+
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      closeSettings();
+    }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal?.classList.contains('active')) {
+      closeSettings();
+    }
+  });
+}
+
+// ==========================================================================
+// Navigation & Tab Switching
+// ==========================================================================
+function setupNavigation() {
+  const navButtons = document.querySelectorAll('.nav-segmented-btn');
+  const indicator = document.querySelector('.nav-segmented-indicator');
+
+  function updateIndicator(activeBtn) {
+    if (!activeBtn || !indicator) return;
+    const isRtl = document.documentElement.dir === 'rtl';
+    const parentRect = activeBtn.parentElement.getBoundingClientRect();
+    const btnRect = activeBtn.getBoundingClientRect();
+
+    const left = btnRect.left - parentRect.left;
+    const width = btnRect.width;
+
+    indicator.style.width = `${width}px`;
+    indicator.style.transform = `translateX(${left - 3}px)`;
+  }
+
+  navButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.getAttribute('data-tab');
+      if (tab) {
+        setActiveTab(tab);
+      }
+    });
+  });
+
+  // Observe activeTab in state
+  subscribe((state, key) => {
+    if (key === 'activeTab' || !key) {
+      const currentTab = state.activeTab;
+
+      // Update button classes
+      navButtons.forEach((btn) => {
+        const isMatch = btn.getAttribute('data-tab') === currentTab;
+        btn.classList.toggle('active', isMatch);
+        if (isMatch) {
+          updateIndicator(btn);
+        }
+      });
+
+      // Update view sections
+      document.querySelectorAll('.view-section').forEach((section) => {
+        const matches = section.id === `view-${currentTab}`;
+        if (matches) {
+          section.classList.add('active');
+        } else {
+          section.classList.remove('active');
+        }
+      });
+    }
+  });
+
+  // Window resize & language flip indicator updates
+  window.addEventListener('resize', () => {
+    const activeBtn = document.querySelector('.nav-segmented-btn.active');
+    updateIndicator(activeBtn);
+  });
+
+  window.addEventListener('aion:languagechange', () => {
+    setTimeout(() => {
+      const activeBtn = document.querySelector('.nav-segmented-btn.active');
+      updateIndicator(activeBtn);
+    }, 50);
+  });
+}
+
+// ==========================================================================
+// Workstation Quick Actions (/api/command)
+// ==========================================================================
+async function dispatchOsCommand(action, target = '') {
+  try {
+    const res = await fetch('/api/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, target }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      if (action === 'lock') {
+        showToast(t('activityLockDone'), 'lock');
+        addActivity(t('actionLock'), t('activityLockDone'), 'lock');
+      } else if (action === 'sleep') {
+        showToast(t('activitySleepDone'), 'moon');
+        addActivity(t('actionSleep'), t('activitySleepDone'), 'moon');
+      } else if (action === 'kill_process') {
+        showToast(t('activityKillDone', { target }), 'x');
+        addActivity(t('actionQuit'), t('activityKillDone', { target }), 'power');
+      }
+      return data;
+    } else {
+      const err = data.error || data.message || 'Action failed';
+      showToast(err, 'close');
+      addActivity('Action Failed', err, 'close');
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'close');
+    addActivity('Command Error', err.message, 'close');
+  }
+}
+
+function setupWorkstationActions() {
+  const btnLock = document.getElementById('btnActionLock');
+  const btnSleep = document.getElementById('btnActionSleep');
+  const btnQuit = document.getElementById('btnActionQuit');
+
+  if (btnLock) {
+    btnLock.addEventListener('click', () => dispatchOsCommand('lock'));
+  }
+
+  if (btnSleep) {
+    btnSleep.addEventListener('click', () => dispatchOsCommand('sleep'));
+  }
+
+  // Quit App Modal
+  const modal = document.getElementById('quitModal');
+  const modalInput = document.getElementById('quitModalInput');
+  const modalCancel = document.getElementById('quitModalCancel');
+  const modalConfirm = document.getElementById('quitModalConfirm');
+
+  if (btnQuit && modal) {
+    btnQuit.addEventListener('click', () => {
+      modal.classList.add('active');
+      if (modalInput) {
+        modalInput.value = '';
+        setTimeout(() => modalInput.focus(), 100);
+      }
+    });
+
+    modalCancel?.addEventListener('click', () => {
+      modal.classList.remove('active');
+    });
+
+    modalConfirm?.addEventListener('click', () => {
+      const target = modalInput?.value?.trim();
+      if (target) {
+        dispatchOsCommand('kill_process', target);
+      }
+      modal.classList.remove('active');
+    });
+
+    modalInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        modalConfirm.click();
+      } else if (e.key === 'Escape') {
+        modalCancel.click();
+      }
+    });
+  }
+}
+
+// ==========================================================================
+// Syncthing Peer Sync Polling (/api/sync/status)
+// ==========================================================================
+async function fetchSyncStatus() {
+  try {
+    const res = await fetch('/api/sync/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    setSyncthingData({
+      online: true,
+      data,
+    });
+    renderSyncthingCard(data);
+  } catch {
+    renderSyncthingCard(null);
+  }
+}
+
+function renderSyncthingCard(data) {
+  const container = document.getElementById('syncPeersList');
+  if (!container) return;
+
+  if (!data || !data.system) {
+    container.innerHTML = `
+      <div class="sync-peer-item">
+        <span class="sync-peer-name">${getSvgIcon('devices', 'icon-sm')} ${t('meshNoPeers')}</span>
+        <span class="sync-peer-status">${t('meshStatusSynced')}</span>
+      </div>
+    `;
+    return;
+  }
+
+  const myId = data.system.myID ? `${data.system.myID.slice(0, 7)}...` : 'Local';
+  container.innerHTML = `
+    <div class="sync-peer-item">
+      <span class="sync-peer-name">${getSvgIcon('devices', 'icon-sm')} Station (${myId})</span>
+      <span class="sync-peer-status" style="color: var(--color-success);">${t('meshStatusSynced')}</span>
+    </div>
+  `;
+}
+
+// ==========================================================================
+// Human Activity Feed Renderer
+// ==========================================================================
+function renderActivityFeed(feed) {
+  const list = document.getElementById('activityFeedList');
+  if (!list) return;
+
+  if (!feed || feed.length === 0) {
+    list.innerHTML = `<div class="activity-empty">${t('activityEmpty')}</div>`;
+    return;
+  }
+
+  list.innerHTML = feed
+    .map(
+      (item) => `
+    <div class="activity-item">
+      <div class="activity-icon-box">
+        ${getSvgIcon(item.iconType || 'activity', 'icon-sm')}
+      </div>
+      <div class="activity-content">
+        <div class="activity-title">${item.title}</div>
+        ${item.desc ? `<div class="activity-desc">${item.desc}</div>` : ''}
+      </div>
+      <div class="activity-time">${item.time}</div>
+    </div>
+  `
+    )
+    .join('');
+}
+
+// ==========================================================================
+// Chat & Assistant Logic (/api/ai)
+// ==========================================================================
+function renderChatMessages(messages) {
+  const container = document.getElementById('chatMessagesContainer');
+  if (!container) return;
+
+  container.innerHTML = messages
+    .map((msg) => {
+      const isUser = msg.role === 'user';
+      return `
+      <div class="chat-bubble ${isUser ? 'chat-bubble-user' : 'chat-bubble-assistant'}">
+        <div class="chat-bubble-text">${escapeHtml(msg.text)}</div>
+        <div class="chat-bubble-time">${msg.time}</div>
+      </div>
+    `;
+    })
+    .join('');
+
+  container.scrollTop = container.scrollHeight;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+async function handleSendMessage(rawText) {
+  const text = (rawText || '').trim();
+  if (!text) return;
+
+  const chatView = document.getElementById('canvasChatView');
+  const isChatVisible = chatView && chatView.style.display !== 'none';
+
+  // 1. DEVICE VIEW: Execute direct OS / hardware command immediately (<10ms NLU)
+  if (!isChatVisible) {
+    try {
+      const res = await fetch('/api/commands/instant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text }),
+      });
+      const data = await res.json();
+      if (res.ok && data.handled) {
+        showToast(data.response || 'Action executed', 'check');
+        addActivity('Device Command', data.response || text, 'activity');
+      } else {
+        showToast(data.response || `Command not recognized: ${text}`, 'alert');
+      }
+    } catch (err) {
+      showToast(`Command error: ${err.message}`, 'error');
+    }
+    return;
+  }
+
+  // 2. ASSISTANT VIEW: Send directly to AI Assistant Workspace
+  const state = getState();
+  if (state.isAssistantBusy) return;
+
+  addChatMessage('user', text);
+  setAssistantBusy(true);
+  showTypingIndicator(true);
+
+  try {
+    const res = await fetch('/api/assistant/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: text }),
+    });
+
+    const data = await res.json();
+    showTypingIndicator(false);
+    setAssistantBusy(false);
+
+    if (res.ok && (data.response?.content || data.assistantMessage?.content)) {
+      const reply = data.response?.content || data.assistantMessage?.content;
+      addChatMessage('assistant', reply);
+      addActivity(t('chatAssistant'), text.slice(0, 32), 'chat');
+    } else {
+      const err = data.error || t('chatError');
+      addChatMessage('assistant', err, true);
+    }
+  } catch (err) {
+    showTypingIndicator(false);
+    setAssistantBusy(false);
+    addChatMessage('assistant', `${t('chatError')} (${err.message})`, true);
+  }
+}
+
+function showTypingIndicator(show) {
+  const container = document.getElementById('chatMessagesContainer');
+  if (!container) return;
+
+  const existing = document.getElementById('typingIndicator');
+  if (show && !existing) {
+    const ind = document.createElement('div');
+    ind.id = 'typingIndicator';
+    ind.className = 'typing-indicator';
+    ind.innerHTML = `
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+    `;
+    container.appendChild(ind);
+    container.scrollTop = container.scrollHeight;
+  } else if (!show && existing) {
+    existing.remove();
+  }
+}
+
+function setupChatPromptChips() {
+  document.querySelectorAll('.prompt-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const prompt = chip.getAttribute('data-prompt');
+      const input = document.getElementById('commandInput');
+      if (input) {
+        input.value = prompt;
+        input.focus();
+      }
+      handleSendMessage(prompt);
+    });
+  });
+}
+
+// ==========================================================================
+// Unified Bottom Command Bar
+// ==========================================================================
+function setupCommandBar() {
+  const form = document.getElementById('commandBarForm');
+  const input = document.getElementById('commandInput');
+  const micBtn = document.getElementById('commandMicBtn');
+
+  if (form && input) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const val = input.value;
+      input.value = '';
+      handleSendMessage(val);
+    });
+  }
+
+  // Voice Dictation (Web Speech API)
+  if (micBtn && input) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        setMicListening(true);
+        micBtn.classList.add('recording');
+        input.setAttribute('placeholder', t('micListening'));
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        input.value = transcript;
+        setTimeout(() => handleSendMessage(transcript), 300);
+      };
+
+      recognition.onerror = () => {
+        setMicListening(false);
+        micBtn.classList.remove('recording');
+        input.setAttribute('placeholder', t('commandPlaceholder'));
+      };
+
+      recognition.onend = () => {
+        setMicListening(false);
+        micBtn.classList.remove('recording');
+        input.setAttribute('placeholder', t('commandPlaceholder'));
+      };
+
+      micBtn.addEventListener('click', () => {
+        const state = getState();
+        if (state.isMicListening) {
+          recognition.stop();
+        } else {
+          recognition.lang = getLanguage() === 'ar' ? 'ar-SA' : getLanguage() === 'de' ? 'de-DE' : 'en-US';
+          recognition.start();
+        }
+      });
+    } else {
+      micBtn.addEventListener('click', () => {
+        showToast(t('micNotSupported'), 'close');
+      });
+    }
+  }
+}
+
+// ==========================================================================
+// Settings: Language Switcher
+// ==========================================================================
+function setupLanguageSwitcher() {
+  const btns = document.querySelectorAll('.lang-btn');
+  btns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const lang = btn.getAttribute('data-lang');
+      if (lang) {
+        setLanguage(lang);
+        updateLangButtons();
+      }
+    });
+  });
+
+  function updateLangButtons() {
+    const cur = getLanguage();
+    btns.forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-lang') === cur);
+    });
+  }
+
+  updateLangButtons();
+}
+
+// ==========================================================================
+// Settings: Theme Presets & Color Pickers
+// ==========================================================================
+const THEME_PRESETS = [
+  { id: 'macos-dark', nameKey: 'themeMacosDark', bg: '#141517', accent: '#0a84ff', mode: 'Dark' },
+  { id: 'macos-light', nameKey: 'themeMacosLight', bg: '#f5f5f7', accent: '#0071e3', mode: 'Light' },
+  { id: 'oled-midnight', nameKey: 'themeOledMidnight', bg: '#000000', accent: '#388bfd', mode: 'OLED' },
+  { id: 'space-gray', nameKey: 'themeSpaceGray', bg: '#18191c', accent: '#38bdf8', mode: 'Dark' },
+  { id: 'silver-birch', nameKey: 'themeSilverBirch', bg: '#edf0f4', accent: '#4f46e5', mode: 'Light' },
+  { id: 'titanium-sunset', nameKey: 'themeTitaniumSunset', bg: '#1c1815', accent: '#f59e0b', mode: 'Dark' },
+  { id: 'alpine-glacier', nameKey: 'themeAlpineGlacier', bg: '#eef6fc', accent: '#0284c7', mode: 'Light' },
+  { id: 'pacific-blue', nameKey: 'themePacificBlue', bg: '#0a1322', accent: '#00b4d8', mode: 'Dark' },
+  { id: 'forest-evergreen', nameKey: 'themeForestEvergreen', bg: '#0c1611', accent: '#10b981', mode: 'Dark' },
+  { id: 'royal-purple', nameKey: 'themeRoyalPurple', bg: '#120b1b', accent: '#a855f7', mode: 'Dark' },
+];
+
+function setupThemePresets() {
+  const container = document.getElementById('themePresetsGrid');
+  if (!container) return;
+
+  function renderPresets() {
+    const currentTheme = getState().theme;
+    container.innerHTML = THEME_PRESETS.map((p) => `
+      <button class="theme-preset-card ${p.id === currentTheme ? 'active' : ''}" data-theme-id="${p.id}">
+        <div class="preset-swatch">
+          <div class="preset-swatch-half-left" style="background: ${p.bg};"></div>
+          <div class="preset-swatch-half-right" style="background: ${p.accent};"></div>
+        </div>
+        <div class="preset-info">
+          <span class="preset-name">${t(p.nameKey)}</span>
+          <span class="preset-category">${p.mode}</span>
+        </div>
+      </button>
+    `).join('');
+
+    container.querySelectorAll('.theme-preset-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        const id = card.getAttribute('data-theme-id');
+        if (id) {
+          setTheme(id);
+          renderPresets();
+          showToast(`${t('sectionAppearance')}: ${t(THEME_PRESETS.find(x => x.id === id).nameKey)}`);
+        }
+      });
+    });
+  }
+
+  renderPresets();
+  window.addEventListener('aion:languagechange', renderPresets);
+}
+
+function setupColorPickers() {
+  const inputBg = document.getElementById('colorPickerBg');
+  const labelBg = document.getElementById('colorLabelBg');
+  const inputSurface = document.getElementById('colorPickerSurface');
+  const labelSurface = document.getElementById('colorLabelSurface');
+  const inputAccent = document.getElementById('colorPickerAccent');
+  const labelAccent = document.getElementById('colorLabelAccent');
+  const resetBtn = document.getElementById('btnResetColors');
+
+  function syncValues() {
+    const { customColors } = getState();
+    if (inputBg && labelBg) {
+      inputBg.value = customColors.bg || '#141517';
+      labelBg.textContent = customColors.bg || 'Default';
+    }
+    if (inputSurface && labelSurface) {
+      inputSurface.value = customColors.surface || '#1e1f23';
+      labelSurface.textContent = customColors.surface || 'Default';
+    }
+    if (inputAccent && labelAccent) {
+      inputAccent.value = customColors.accent || '#0a84ff';
+      labelAccent.textContent = customColors.accent || 'Default';
+    }
+  }
+
+  inputBg?.addEventListener('input', (e) => {
+    setCustomColor('bg', e.target.value);
+    if (labelBg) labelBg.textContent = e.target.value;
+  });
+
+  inputSurface?.addEventListener('input', (e) => {
+    setCustomColor('surface', e.target.value);
+    if (labelSurface) labelSurface.textContent = e.target.value;
+  });
+
+  inputAccent?.addEventListener('input', (e) => {
+    setCustomColor('accent', e.target.value);
+    if (labelAccent) labelAccent.textContent = e.target.value;
+  });
+
+  resetBtn?.addEventListener('click', () => {
+    resetCustomColors();
+    syncValues();
+    showToast(t('resetColors'));
+  });
+
+  syncValues();
+}
+
+// ==========================================
+// Settings: Developer Mode Toggle & Controls
+// ==========================================
+function setupDeveloperMode() {
+  const toggle = document.getElementById('devModeToggle');
+  const devContainer = document.getElementById('devModeContainer');
+
+  function updateDevVisibility(enabled) {
+    if (toggle) toggle.checked = enabled;
+    if (devContainer) {
+      devContainer.classList.toggle('active', enabled);
+    }
+  }
+
+  toggle?.addEventListener('change', (e) => {
+    setDevMode(e.target.checked);
+  });
+
+  subscribe((state, key) => {
+    if (key === 'devMode' || !key) {
+      updateDevVisibility(state.devMode);
+    }
+  });
+
+  // Setup SSE Event Stream (/api/logs)
+  setupSseLogs();
+
+  // Setup Updater Controls
+  setupUpdateControls();
+}
+
+function setupSseLogs() {
+  const logsContainer = document.getElementById('devConsoleLogs');
+  const clearBtn = document.getElementById('devClearLogsBtn');
+  const filterPills = document.querySelectorAll('.dev-filter-pill');
+
+  function renderLogs() {
+    if (!logsContainer) return;
+    const { logs, logFilter } = getState();
+    const filtered = logFilter === 'ALL' ? logs : logs.filter((l) => l.level === logFilter);
+
+    if (filtered.length === 0) {
+      logsContainer.innerHTML = `<div style="color: var(--text-tertiary); padding: 12px 0;">${t('devLogsEmpty')}</div>`;
+      return;
+    }
+
+    logsContainer.innerHTML = filtered
+      .map(
+        (l) => `
+      <div class="log-entry">
+        <span class="log-time">[${l.time}]</span>
+        <span class="log-level log-level-${l.level}">${l.level}</span>
+        <span class="log-msg">${escapeHtml(l.message)}</span>
+      </div>
+    `
+      )
+      .join('');
+
+    logsContainer.scrollTop = logsContainer.scrollHeight;
+  }
+
+  // Connect EventSource to /api/logs
+  try {
+    const sse = new EventSource('/api/logs');
+    sse.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.level && data.message) {
+          addLog(data.level, data.message);
+          renderLogs();
+        }
+      } catch {
+        addLog('INFO', event.data);
+        renderLogs();
+      }
+    };
+    sse.onerror = () => {
+      // Clean fallback if SSE temporarily unavailable
+    };
+  } catch {}
+
+  clearBtn?.addEventListener('click', () => {
+    clearLogs();
+    renderLogs();
+  });
+
+  filterPills.forEach((pill) => {
+    pill.addEventListener('click', () => {
+      const filter = pill.getAttribute('data-filter');
+      if (filter) {
+        setLogFilter(filter);
+        filterPills.forEach((p) => p.classList.toggle('active', p === pill));
+        renderLogs();
+      }
+    });
+  });
+}
+
+function setupUpdateControls() {
+  const checkBtn = document.getElementById('btnCheckUpdates');
+  const applyBtn = document.getElementById('btnApplyUpdate');
+  const statusLabel = document.getElementById('updateStatusLabel');
+  const versionTag = document.getElementById('updaterVersionTag');
+
+  checkBtn?.addEventListener('click', async () => {
+    if (!statusLabel) return;
+    statusLabel.textContent = t('updateChecking');
+
+    try {
+      const res = await fetch('/api/system/update/check');
+      const data = await res.json();
+
+      if (res.ok && data.status === 'ok') {
+        if (versionTag && data.currentVersion) {
+          versionTag.textContent = `v${data.currentVersion}`;
+        }
+
+        if (data.updateAvailable) {
+          statusLabel.textContent = t('updateAvailable', { version: data.latestVersion });
+          if (applyBtn) applyBtn.style.display = 'inline-flex';
+        } else {
+          statusLabel.textContent = t('updateUpToDate', { version: data.currentVersion });
+          if (applyBtn) applyBtn.style.display = 'none';
+        }
+      } else {
+        statusLabel.textContent = data.message || t('updateError');
+      }
+    } catch (err) {
+      statusLabel.textContent = `${t('updateError')} (${err.message})`;
+    }
+  });
+
+  applyBtn?.addEventListener('click', async () => {
+    if (!statusLabel) return;
+    statusLabel.textContent = t('updateApplying');
+
+    try {
+      const res = await fetch('/api/system/update/apply', { method: 'POST' });
+      const data = await res.json();
+      showToast(data.message || 'Update initiated', 'refresh');
+    } catch (err) {
+      showToast(`Update error: ${err.message}`, 'close');
+    }
+  });
+}
+
+// ==========================================================================
+// Mobile Client Push & Real-Time Telemetry Companion Channel
+// ==========================================================================
+
+let activeWakeLockSentinel = null;
+let pingAudioInterval = null;
+
+export function playPhonePingChime() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const now = ctx.currentTime;
+    // Tone 1 (A5 -> A6)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(880, now);
+    osc1.frequency.exponentialRampToValueAtTime(1760, now + 0.16);
+    gain1.gain.setValueAtTime(0.7, now);
+    gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.22);
+
+    // Tone 2 (E6 -> E7)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(1320, now + 0.25);
+    osc2.frequency.exponentialRampToValueAtTime(2640, now + 0.48);
+    gain2.gain.setValueAtTime(0.8, now + 0.25);
+    gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.58);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.25);
+    osc2.stop(now + 0.58);
+  } catch (err) {
+    console.debug('[AION Audio Chime] Silent error:', err);
+  }
+}
+
+export function triggerPhonePingAlert() {
+  // 1. Play first chime immediately
+  playPhonePingChime();
+
+  // 2. Play repeating chime every 1.6s
+  if (pingAudioInterval) clearInterval(pingAudioInterval);
+  pingAudioInterval = setInterval(() => {
+    playPhonePingChime();
+  }, 1600);
+
+  // 3. Vibrate device (pulse pattern)
+  if ('vibrate' in navigator) {
+    try {
+      navigator.vibrate([400, 150, 400, 150, 600]);
+    } catch {}
+  }
+
+  // 4. Show pulsing visual alert overlay
+  const overlay = document.getElementById('mobilePingOverlay');
+  if (overlay) {
+    overlay.style.display = 'flex';
+  }
+}
+
+export function silencePhonePingAlert() {
+  if (pingAudioInterval) {
+    clearInterval(pingAudioInterval);
+    pingAudioInterval = null;
+  }
+  if ('vibrate' in navigator) {
+    try {
+      navigator.vibrate(0);
+    } catch {}
+  }
+  const overlay = document.getElementById('mobilePingOverlay');
+  if (overlay) {
+    overlay.style.display = 'none';
+  }
+}
+
+async function requestScreenWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      activeWakeLockSentinel = await navigator.wakeLock.request('screen');
+      activeWakeLockSentinel.addEventListener('release', () => {
+        activeWakeLockSentinel = null;
+      });
+      return true;
+    } catch (err) {
+      console.debug('[AION WakeLock] Error:', err.message);
+      return false;
+    }
+  }
+  return false;
+}
+
+function releaseScreenWakeLock() {
+  if (activeWakeLockSentinel) {
+    activeWakeLockSentinel.release().catch(() => {});
+    activeWakeLockSentinel = null;
+  }
+}
+
+export async function setupMobileCompanionChannel() {
+  const overlay = document.getElementById('mobilePingOverlay');
+  const btnDismiss = document.getElementById('btnDismissMobilePing');
+
+  overlay?.addEventListener('click', silencePhonePingAlert);
+  btnDismiss?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    silencePhonePingAlert();
+  });
+
+  // Determine client self device id
+  let selfDeviceId = localStorage.getItem('aion_self_device_id') || '';
+
+  async function resolveSelfDevice() {
+    try {
+      const res = await fetch('/api/devices');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.devices || !Array.isArray(data.devices)) return;
+
+      const clientIp = data.clientIp || '';
+      // 1. Try IP match
+      let match = data.devices.find((d) => d.tailscaleIp && clientIp.includes(d.tailscaleIp)) ||
+                  data.devices.find((d) => d.lanIp && clientIp.includes(d.lanIp));
+
+      // 2. If mobile user agent and not matched, find phone device
+      const isMobileAgent = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (!match && isMobileAgent) {
+        match = data.devices.find((d) => ['phone', 'mobile', 'tablet'].includes(d.type?.toLowerCase())) ||
+                data.devices.find((d) => ['ios', 'android'].includes(d.os?.toLowerCase()));
+      }
+
+      if (match) {
+        selfDeviceId = match.id;
+        localStorage.setItem('aion_self_device_id', selfDeviceId);
+      }
+    } catch (err) {
+      console.debug('[AION Self-Device] Discovery error:', err);
+    }
+  }
+
+  await resolveSelfDevice();
+
+  // Send periodic telemetry (Battery, Charging, Wake Lock, Route)
+  async function reportTelemetry() {
+    if (!selfDeviceId) return;
+    try {
+      let battery = null;
+      let charging = null;
+
+      if ('getBattery' in navigator) {
+        try {
+          const b = await navigator.getBattery();
+          battery = Math.round(b.level * 100);
+          charging = Boolean(b.charging);
+        } catch {}
+      }
+
+      const isMesh = window.location.hostname.startsWith('100.');
+      const route = isMesh ? 'mesh' : 'lan';
+      const wakeLock = Boolean(activeWakeLockSentinel);
+
+      await fetch(`/api/devices/${encodeURIComponent(selfDeviceId)}/telemetry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ battery, charging, wakeLock, route }),
+      });
+    } catch (err) {
+      console.debug('[AION Telemetry] Report error:', err.message);
+    }
+  }
+
+  // Start telemetry loop (immediate + every 15s)
+  reportTelemetry();
+  setInterval(reportTelemetry, 15000);
+
+  // If battery changes, report immediately
+  if ('getBattery' in navigator) {
+    try {
+      navigator.getBattery().then((b) => {
+        b.addEventListener('levelchange', reportTelemetry);
+        b.addEventListener('chargingchange', reportTelemetry);
+      }).catch(() => {});
+    } catch {}
+  }
+
+  // Long-poll event listener for commands sent to this device
+  let isPolling = false;
+  async function pollCommands() {
+    if (!selfDeviceId || isPolling) return;
+    isPolling = true;
+
+    try {
+      const res = await fetch(`/api/devices/${encodeURIComponent(selfDeviceId)}/events?wait=true&timeout=15000`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'ok' && Array.isArray(data.commands) && data.commands.length > 0) {
+          for (const cmd of data.commands) {
+            handleReceivedCommand(cmd);
+          }
+        }
+      }
+    } catch (err) {
+      await new Promise((r) => setTimeout(r, 2500));
+    } finally {
+      isPolling = false;
+      setTimeout(pollCommands, 300);
+    }
+  }
+
+  async function handleReceivedCommand(cmd) {
+    if (!cmd || !cmd.action) return;
+
+    if (cmd.action === 'ping') {
+      triggerPhonePingAlert();
+    } else if (cmd.action === 'open_url') {
+      const url = cmd.payload?.url || cmd.url;
+      if (url) {
+        showToast(`Opening: ${url}`, 'link');
+        try {
+          window.open(url, '_blank');
+        } catch {
+          window.location.href = url;
+        }
+      }
+    } else if (cmd.action === 'clipboard') {
+      const text = cmd.payload?.text || cmd.text;
+      if (text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast(t('clipboardReceived') || 'Copied to clipboard from computer', 'clipboard');
+        } catch {
+          showToast(`Clipboard: ${text.slice(0, 32)}`, 'clipboard');
+        }
+      }
+    } else if (cmd.action === 'wake_lock') {
+      const enable = Boolean(cmd.payload?.enabled ?? cmd.enabled);
+      if (enable) {
+        await requestScreenWakeLock();
+      } else {
+        releaseScreenWakeLock();
+      }
+      reportTelemetry();
+    }
+  }
+
+  // Start polling loop
+  pollCommands();
+}
+
+// ==========================================================================
+// Authentication, Remote Pairing & Trusted Devices
+// ==========================================================================
+
+async function checkAuthStatus() {
+  try {
+    const token = localStorage.getItem('aion_token');
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/auth/status', { headers });
+    const data = await res.json();
+
+    const pairingModal = document.getElementById('pairingModal');
+    if (!data.authenticated) {
+      if (pairingModal) pairingModal.style.display = 'flex';
+      setupPairingModal();
+    } else {
+      if (pairingModal) pairingModal.style.display = 'none';
+      if (data.pin) {
+        updateSettingsPairing(data.pin);
+      }
+    }
+  } catch (err) {
+    console.warn('Auth status check error:', err);
+  }
+}
+
+function setupPairingModal() {
+  const btnSubmit = document.getElementById('btnSubmitPairing');
+  const pinInput = document.getElementById('pairPinInput');
+  const nameInput = document.getElementById('pairDeviceNameInput');
+  const rememberChk = document.getElementById('pairRememberDevice');
+  const errorMsg = document.getElementById('pairErrorMsg');
+
+  if (nameInput && !nameInput.value) {
+    const isIOS = /iPhone|iPad/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    nameInput.value = isIOS ? 'iPhone Companion' : isAndroid ? 'Android Companion' : 'Mobile Companion';
+  }
+
+  btnSubmit?.addEventListener('click', async () => {
+    const pin = pinInput?.value?.trim();
+    if (!pin || pin.length !== 4) {
+      if (errorMsg) {
+        errorMsg.textContent = 'Please enter a valid 4-digit PIN';
+        errorMsg.style.display = 'block';
+      }
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/auth/pair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin,
+          deviceName: nameInput?.value?.trim() || 'Mobile Companion',
+          remember: rememberChk?.checked !== false,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.status !== 'ok') {
+        if (errorMsg) {
+          errorMsg.textContent = data.error || 'Invalid Pairing PIN';
+          errorMsg.style.display = 'block';
+        }
+        return;
+      }
+
+      if (data.token) {
+        localStorage.setItem('aion_token', data.token);
+      }
+
+      const modal = document.getElementById('pairingModal');
+      if (modal) modal.style.display = 'none';
+      showToast('Device paired successfully!', 'check');
+      location.reload();
+    } catch (err) {
+      if (errorMsg) {
+        errorMsg.textContent = `Pairing failed: ${err.message}`;
+        errorMsg.style.display = 'block';
+      }
+    }
+  });
+}
+
+async function updateSettingsPairing(pin) {
+  const pinEl = document.getElementById('settingsPairingPin');
+  if (pinEl && pin) {
+    pinEl.textContent = pin;
+  }
+  await fetchTrustedDevices();
+}
+
+async function fetchTrustedDevices() {
+  const listEl = document.getElementById('trustedDevicesList');
+  if (!listEl) return;
+
+  try {
+    const token = localStorage.getItem('aion_token');
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/auth/devices', { headers });
+    const data = await res.json();
+    if (data.status === 'ok' && Array.isArray(data.devices)) {
+      if (data.devices.length === 0) {
+        listEl.innerHTML = `<div style="font-size: 12px; color: var(--text-tertiary);">${t('trustedDevicesEmpty')}</div>`;
+        return;
+      }
+
+      listEl.innerHTML = data.devices
+        .map(
+          (d) => `
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);">
+          <div>
+            <div style="font-size: 12.5px; font-weight: 600;">${d.name}</div>
+            <div style="font-size: 11px; color: var(--text-tertiary);">${d.ip} &bull; ${new Date(d.lastUsedAt).toLocaleDateString()}</div>
+          </div>
+          <button class="btn-secondary" data-revoke-id="${d.id}" style="padding: 4px 8px; font-size: 11px; color: #ef4444;" type="button">
+            ${t('btnRevokeDevice')}
+          </button>
+        </div>
+      `
+        )
+        .join('');
+
+      listEl.querySelectorAll('[data-revoke-id]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-revoke-id');
+          if (id) {
+            await fetch(`/api/auth/devices/${encodeURIComponent(id)}`, {
+              method: 'DELETE',
+              headers,
+            });
+            fetchTrustedDevices();
+            showToast('Device revoked', 'check');
+          }
+        });
+      });
+    }
+  } catch (err) {
+    console.warn('Failed loading trusted devices:', err);
+  }
+}
+
+function setupPairingSettingsControls() {
+  const btnRegen = document.getElementById('btnRegeneratePin');
+  btnRegen?.addEventListener('click', async () => {
+    try {
+      const token = localStorage.getItem('aion_token');
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/auth/pin/regenerate', { method: 'POST', headers });
+      const data = await res.json();
+      if (data.status === 'ok' && data.pin) {
+        const pinEl = document.getElementById('settingsPairingPin');
+        if (pinEl) pinEl.textContent = data.pin;
+        showToast('Pairing PIN regenerated', 'check');
+      }
+    } catch (err) {
+      showToast(`Regeneration failed: ${err.message}`, 'alert');
+    }
+  });
+}
+
+// ==========================================================================
+// 1-Click Mobile Setup Card Controller
+// ==========================================================================
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+let qrCountdownTimer = null;
+let pinRemainingSeconds = 120;
+
+export function setupMobileOnboardingCard() {
+  const card = document.getElementById('mobileSetupCard');
+  const toggleBtn = document.getElementById('btnToggleMobileSetup');
+  const pushBtn = document.getElementById('btnEnablePushNotifications');
+  const runnerBtn = document.getElementById('btnInstallAionRunner');
+  const qrBtn = document.getElementById('btnPairMobileQr');
+
+  const isMobileClient = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+    (typeof window !== 'undefined' && window.innerWidth <= 768) ||
+    (typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('aion_paired_token')));
+
+  if (card) {
+    if (isMobileClient) {
+      card.style.display = 'none';
+    } else {
+      const isCollapsed = localStorage.getItem('aion_mobile_setup_collapsed') === 'true';
+      if (isCollapsed) {
+        card.classList.add('collapsed');
+      }
+
+      toggleBtn?.addEventListener('click', () => {
+        const collapsed = card.classList.toggle('collapsed');
+        localStorage.setItem('aion_mobile_setup_collapsed', String(collapsed));
+      });
+
+      pushBtn?.addEventListener('click', async () => {
+        await enableMobilePushNotifications();
+      });
+    }
+  }
+
+  // Platform-Aware Pairing:
+  // Show "Install iOS WebClip" ONLY on iOS Safari
+  // Show "Pair Mobile (QR)" on Desktop & other browsers
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  if (runnerBtn) {
+    runnerBtn.style.display = isIOS ? 'inline-flex' : 'none';
+  }
+
+  if (qrBtn) {
+    qrBtn.style.display = isIOS ? 'none' : 'inline-flex';
+    qrBtn.addEventListener('click', () => {
+      openMobilePairingQrModal();
+    });
+  }
+
+  // Pre-fetch pairing host URL so QR code renders instantly upon click
+  getPairingHostUrl().catch(() => {});
+
+  setupMobilePairingQrModal();
+}
+
+function setupMobilePairingQrModal() {
+  const modal = document.getElementById('mobilePairingQrModal');
+  const closeBtn = document.getElementById('btnClosePairingQrModal');
+  const copyBtn = document.getElementById('btnCopyPairingUrl');
+
+  closeBtn?.addEventListener('click', () => closeMobilePairingQrModal());
+
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      closeMobilePairingQrModal();
+    }
+  });
+
+  copyBtn?.addEventListener('click', () => {
+    const urlDisplay = document.getElementById('pairingQrUrlDisplay');
+    if (urlDisplay && urlDisplay.textContent) {
+      navigator.clipboard?.writeText(urlDisplay.textContent).then(() => {
+        showToast('Pairing URL copied to clipboard', 'check');
+      }).catch(() => {
+        showToast('Failed to copy URL', 'alert');
+      });
+    }
+  });
+}
+
+let cachedPairingHostUrl = null;
+
+/**
+ * Resolves live accessible network IP for pairing (never 'localhost' or '127.0.0.1')
+ */
+export async function getPairingHostUrl() {
+  if (cachedPairingHostUrl) return cachedPairingHostUrl;
+  const port = window.location.port || '5050';
+  const currentHost = window.location.hostname;
+  const isLoopback = !currentHost || currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '::1';
+
+  // 1. If accessed over a live remote/mesh/LAN IP already, use that directly
+  if (!isLoopback) {
+    cachedPairingHostUrl = `${window.location.protocol}//${currentHost}:${port}/setup`;
+    return cachedPairingHostUrl;
+  }
+
+  // 2. Fetch live host Tailscale IP or LAN IP from /api/network/tailscale
+  try {
+    const tsRes = await fetch('/api/network/tailscale');
+    if (tsRes.ok) {
+      const tsData = await tsRes.json();
+      const ip = tsData.ipv4 || tsData.ip;
+      if (ip && ip.startsWith('100.')) {
+        cachedPairingHostUrl = `http://${ip}:${port}/setup`;
+        return cachedPairingHostUrl;
+      }
+      if (tsData.lanIp) {
+        cachedPairingHostUrl = `http://${tsData.lanIp}:${port}/setup`;
+        return cachedPairingHostUrl;
+      }
+    }
+  } catch {}
+
+  // 3. Fallback to /api/capabilities
+  try {
+    const capRes = await fetch('/api/capabilities');
+    if (capRes.ok) {
+      const capData = await capRes.json();
+      const caps = capData.capabilities || {};
+      if (caps.tailscaleIp && caps.tailscaleIp.startsWith('100.')) {
+        cachedPairingHostUrl = `http://${caps.tailscaleIp}:${port}/setup`;
+        return cachedPairingHostUrl;
+      }
+      if (caps.hostIp && !caps.hostIp.startsWith('127.')) {
+        cachedPairingHostUrl = `http://${caps.hostIp}:${port}/setup`;
+        return cachedPairingHostUrl;
+      }
+      if (caps.lanIp) {
+        cachedPairingHostUrl = `http://${caps.lanIp}:${port}/setup`;
+        return cachedPairingHostUrl;
+      }
+    }
+  } catch {}
+
+  // 4. Fallback to /api/devices (local node)
+  try {
+    const devRes = await fetch('/api/devices');
+    if (devRes.ok) {
+      const devData = await devRes.json();
+      const local = (devData.devices || []).find((d) => d.isLocal || d.id === 'local');
+      if (local?.tailscaleIp && local.tailscaleIp.startsWith('100.')) {
+        cachedPairingHostUrl = `http://${local.tailscaleIp}:${port}/setup`;
+        return cachedPairingHostUrl;
+      }
+      if (local?.lanIp) {
+        cachedPairingHostUrl = `http://${local.lanIp}:${port}/setup`;
+        return cachedPairingHostUrl;
+      }
+    }
+  } catch {}
+
+  // 5. Never guess a private-network address. Remote pairing remains disabled
+  // until secure transport and device identity enrollment are available.
+  cachedPairingHostUrl = `${window.location.origin}/setup`;
+  return cachedPairingHostUrl;
+}
+
+export async function openMobilePairingQrModal() {
+  const modal = document.getElementById('mobilePairingQrModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+
+  const urlDisplay = document.getElementById('pairingQrUrlDisplay');
+  const qrContainer = document.getElementById('pairingQrCodeContainer');
+
+  // If already cached, render immediately
+  if (cachedPairingHostUrl) {
+    if (urlDisplay) urlDisplay.textContent = cachedPairingHostUrl;
+    if (qrContainer) qrContainer.innerHTML = generateQrSvg(cachedPairingHostUrl, 190, 2);
+  }
+
+  // Determine host URL (prefer Tailscale IP, fallback to LAN IP, never localhost)
+  const hostUrl = await getPairingHostUrl();
+
+  if (urlDisplay) urlDisplay.textContent = hostUrl;
+  if (qrContainer) {
+    qrContainer.innerHTML = generateQrSvg(hostUrl, 190, 2);
+  }
+
+  await refreshPairingPinDisplay();
+
+  // Start periodic poll & countdown
+  if (qrCountdownTimer) clearInterval(qrCountdownTimer);
+  qrCountdownTimer = setInterval(updatePinCountdown, 1000);
+}
+
+export function closeMobilePairingQrModal() {
+  const modal = document.getElementById('mobilePairingQrModal');
+  if (modal) modal.style.display = 'none';
+  if (qrCountdownTimer) {
+    clearInterval(qrCountdownTimer);
+    qrCountdownTimer = null;
+  }
+}
+
+async function refreshPairingPinDisplay() {
+  const pinDisplay = document.getElementById('pairingQrPinDisplay');
+  const timerDisplay = document.getElementById('pairingQrPinTimer');
+  try {
+    const res = await fetch('/api/auth/pin');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.pin && pinDisplay) {
+        pinDisplay.textContent = data.pin;
+      }
+      if (data.milliseconds_remaining) {
+        pinRemainingSeconds = Math.max(0, Math.floor(data.milliseconds_remaining / 1000));
+      } else {
+        pinRemainingSeconds = 120;
+      }
+      if (timerDisplay) {
+        timerDisplay.textContent = `Refreshes in ${pinRemainingSeconds}s`;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch PIN for QR modal:', err);
+  }
+}
+
+function updatePinCountdown() {
+  const timerDisplay = document.getElementById('pairingQrPinTimer');
+  if (pinRemainingSeconds > 0) {
+    pinRemainingSeconds--;
+    if (timerDisplay) timerDisplay.textContent = `Refreshes in ${pinRemainingSeconds}s`;
+  } else {
+    refreshPairingPinDisplay();
+  }
+}
+
+export async function enableMobilePushNotifications() {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      showToast('Push notifications not supported on this browser', 'alert');
+      return false;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      showToast('Push permission denied', 'alert');
+      return false;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const keyRes = await fetch('/api/push/vapid-public-key');
+    const keyData = await keyRes.json();
+    if (!keyData.publicKey) {
+      showToast('Failed to retrieve VAPID key', 'alert');
+      return false;
+    }
+    const appKey = urlBase64ToUint8Array(keyData.publicKey);
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: appKey,
+    });
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription: sub }),
+    });
+    showToast('Web Push successfully enabled!', 'check');
+    return true;
+  } catch (err) {
+    showToast(`Push activation error: ${err.message}`, 'alert');
+    return false;
+  }
+}
+
+// ==========================================================================
+// App Master Initialization
+export function startLanToMeshAutoRedirect() {
+  if (typeof window === 'undefined') return;
+  const host = window.location.hostname;
+  const isLan = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(host);
+  if (!isLan) return;
+
+  fetch('/api/capabilities')
+    .then(r => r.json())
+    .then(data => {
+      const caps = data?.capabilities;
+      if (!caps) return;
+      const target = caps.tailscaleHttpsUrl || caps.tailscaleHttpUrl || (caps.tailscaleIp ? `http://${caps.tailscaleIp}:5050` : null);
+      if (!target) return;
+
+      const probeInterval = setInterval(async () => {
+        try {
+          const ctrl = new AbortController();
+          const tid = setTimeout(() => ctrl.abort(), 2000);
+          const probe = await fetch(`${target}/api/capabilities`, { signal: ctrl.signal });
+          clearTimeout(tid);
+          if (probe.ok) {
+            clearInterval(probeInterval);
+            console.log('[AION Mesh] Tailscale reachable. Redirecting to encrypted mesh:', target);
+            window.location.href = `${target}/`;
+          }
+        } catch {
+          // Continue background probing
+        }
+      }, 3500);
+    })
+    .catch(() => {});
+}
+
+// ==========================================================================
+if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', () => {
+    startLanToMeshAutoRedirect();
+    // 1. Language & State
+    initLanguage();
+    initState();
+
+    // Check Auth & Setup Pairing
+    checkAuthStatus();
+    setupPairingSettingsControls();
+    setupMobileOnboardingCard();
+
+    // 2. Navigation & Settings Modal
+    initNav();
+    initSettings();
+    setupNavigation();
+    setupSettingsModal();
+
+    // 3. Workstation Quick Actions
+    setupWorkstationActions();
+
+    // 4. Activity Feed & Chat
+    const state = getState();
+    renderActivityFeed(state.activityFeed);
+    renderChatMessages(state.chatMessages);
+    setupChatPromptChips();
+    setupCommandBar();
+
+    // 5. Settings: Language, Themes, Color Pickers, Developer Mode
+    setupLanguageSwitcher();
+    setupThemePresets();
+    setupColorPickers();
+    setupDeveloperMode();
+
+    // 6. Smart Devices, WoL & Running Processes (Phase 2)
+    initDevicesModule();
+    document.getElementById('btnRefreshProcesses')?.addEventListener('click', () => {
+      fetchRunningProcesses();
+    });
+
+    // 7. Live Media & Audio Deck (Phase 3)
+    initMediaModule();
+
+    // 7b. Interactive Remote Desktop (AnyDesk Style)
+    initScreenControl();
+
+    // 8. Syncthing Peer Status
+    fetchSyncStatus();
+
+    // 9. Mobile Companion Channel (Push & Telemetry)
+    setupMobileCompanionChannel();
+
+    // 10. Assistant Workspace & BYOCLI CLI Bridge (Milestone 6)
+    initAssistantWorkspace();
+
+    // 11. Re-render devices on language change
+    window.addEventListener('aion:languagechange', () => {
+      renderDevicesView();
+    });
+
+    // 9. Subscribe to dynamic state updates
+    subscribe((currentState, key) => {
+      if (key === 'activityFeed') {
+        renderActivityFeed(currentState.activityFeed);
+      }
+      if (key === 'chatMessages') {
+        renderChatMessages(currentState.chatMessages);
+      }
+    });
+  });
+}

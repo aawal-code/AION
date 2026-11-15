@@ -1,0 +1,308 @@
+/**
+ * AION Design Tokens
+ * Apple-inspired Light, Dark, and OLED Themes
+ * Calm macOS / iPadOS Control Center & Messages Aesthetic
+ */
+
+:root {
+  /* Typography */
+  --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-arabic: 'Cairo', -apple-system, BlinkMacSystemFont, "SF Arabic", "Segoe UI", "Tahoma", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Monaco, Consolas, monospace;
+
+  /* Spring Motion Curves (Apple Fluid Interaction) */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-fast: 160ms;
+  --duration-normal: 260ms;
+  --duration-spring: 420ms;
+
+  /* Corner Radii */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+  --radius-pill: 9999px;
+
+  /* Default Theme: macOS Dark */
+  --color-bg-base: #141517;
+  --color-surface-base: rgba(30, 31, 35, 0.72);
+  --color-surface-sidebar: rgba(22, 23, 26, 0.75);
+  --color-surface-solid: #1e1f23;
+  --color-surface-hover: rgba(45, 47, 53, 0.82);
+  --color-surface-active: rgba(56, 59, 66, 0.9);
+  --color-accent-base: #0a84ff;
+  --color-accent-hover: #409cff;
+  --color-accent-subtle: rgba(10, 132, 255, 0.14);
+  --color-accent-text: #ffffff;
+  --color-text-primary: #f5f5f7;
+  --color-text-secondary: #98989d;
+  --color-text-tertiary: #636366;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-highlight: rgba(255, 255, 255, 0.14);
+  --color-card-specular: inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  --color-scrim: rgba(0, 0, 0, 0.45);
+  --color-code-bg: rgba(0, 0, 0, 0.35);
+
+  /* Status Tokens */
+  --color-success: #30d158;
+  --color-success-subtle: rgba(48, 209, 88, 0.14);
+  --color-warning: #ffd60a;
+  --color-warning-subtle: rgba(255, 214, 10, 0.14);
+  --color-danger: #ff453a;
+  --color-danger-subtle: rgba(255, 69, 58, 0.14);
+
+  /* Layered Apple Glass Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.28), 0 2px 6px -1px rgba(0, 0, 0, 0.16);
+  --shadow-dock: 0 12px 40px -4px rgba(0, 0, 0, 0.45), 0 4px 16px -2px rgba(0, 0, 0, 0.25);
+  --shadow-popover: 0 20px 50px -10px rgba(0, 0, 0, 0.5);
+
+  /* Custom Overrides (Driven by live color pickers) */
+  --bg: var(--custom-bg, var(--color-bg-base));
+  --surface: var(--custom-surface, var(--color-surface-base));
+  --surface-solid: var(--color-surface-solid);
+  --surface-hover: var(--color-surface-hover);
+  --surface-active: var(--color-surface-active);
+  --accent: var(--custom-accent, var(--color-accent-base));
+  --accent-hover: var(--color-accent-hover);
+  --accent-subtle: var(--color-accent-subtle);
+  --accent-text: var(--color-accent-text);
+  --text-primary: var(--color-text-primary);
+  --text-secondary: var(--color-text-secondary);
+  --text-tertiary: var(--color-text-tertiary);
+  --border: var(--color-border);
+  --border-subtle: var(--color-border-subtle);
+  --border-highlight: var(--color-border-highlight);
+  --card-specular: var(--color-card-specular);
+}
+
+/* ==========================================================================
+   10 Apple-Inspired Themes
+   ========================================================================== */
+
+/* 1. macOS Light: Crisp Studio Light */
+[data-theme="macos-light"] {
+  --color-bg-base: #f5f5f7;
+  --color-surface-base: rgba(255, 255, 255, 0.78);
+  --color-surface-solid: #ffffff;
+  --color-surface-hover: rgba(255, 255, 255, 0.95);
+  --color-surface-active: #ebebeb;
+  --color-accent-base: #0071e3;
+  --color-accent-hover: #0077ed;
+  --color-accent-subtle: rgba(0, 113, 227, 0.1);
+  --color-accent-text: #ffffff;
+  --color-text-primary: #1d1d1f;
+  --color-text-secondary: #6e6e73;
+  --color-text-tertiary: #86868b;
+  --color-border: rgba(0, 0, 0, 0.08);
+  --color-border-subtle: rgba(0, 0, 0, 0.04);
+  --color-border-highlight: rgba(255, 255, 255, 0.8);
+  --color-card-specular: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+  --color-scrim: rgba(0, 0, 0, 0.2);
+  --color-code-bg: rgba(0, 0, 0, 0.05);
+  --color-success: #28cd41;
+  --color-success-subtle: rgba(40, 205, 65, 0.12);
+  --color-warning: #ff9500;
+  --color-warning-subtle: rgba(255, 149, 0, 0.12);
+  --color-danger: #ff3b30;
+  --color-danger-subtle: rgba(255, 59, 48, 0.12);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  --shadow-dock: 0 14px 44px -4px rgba(0, 0, 0, 0.14), 0 4px 16px -2px rgba(0, 0, 0, 0.06);
+  --shadow-popover: 0 20px 50px -10px rgba(0, 0, 0, 0.15);
+}
+
+/* 2. macOS Dark: Cupertino Slate & Electric Blue */
+[data-theme="macos-dark"] {
+  --color-bg-base: #141517;
+  --color-surface-base: rgba(30, 31, 35, 0.72);
+  --color-surface-sidebar: rgba(22, 23, 26, 0.75);
+  --color-surface-solid: #1e1f23;
+  --color-surface-hover: rgba(45, 47, 53, 0.82);
+  --color-surface-active: rgba(56, 59, 66, 0.9);
+  --color-accent-base: #0a84ff;
+  --color-accent-hover: #409cff;
+  --color-accent-subtle: rgba(10, 132, 255, 0.14);
+  --color-accent-text: #ffffff;
+  --color-text-primary: #f5f5f7;
+  --color-text-secondary: #98989d;
+  --color-text-tertiary: #636366;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-highlight: rgba(255, 255, 255, 0.14);
+  --color-card-specular: inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+}
+
+/* 3. OLED Midnight: Pure Pitch Black & Deep Sapphire */
+[data-theme="oled-midnight"] {
+  --color-bg-base: #000000;
+  --color-surface-base: rgba(18, 18, 20, 0.85);
+  --color-surface-solid: #121214;
+  --color-surface-hover: rgba(30, 30, 34, 0.9);
+  --color-surface-active: rgba(42, 42, 48, 0.95);
+  --color-accent-base: #388bfd;
+  --color-accent-hover: #58a6ff;
+  --color-accent-subtle: rgba(56, 139, 253, 0.16);
+  --color-accent-text: #ffffff;
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #a1a1a6;
+  --color-text-tertiary: #52525b;
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-highlight: rgba(255, 255, 255, 0.18);
+  --color-card-specular: inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+  --color-code-bg: rgba(255, 255, 255, 0.04);
+}
+
+/* 4. Space Gray: MacBook Pro Aluminum & Cool Cyan */
+[data-theme="space-gray"] {
+  --color-bg-base: #18191c;
+  --color-surface-base: rgba(32, 34, 39, 0.74);
+  --color-surface-solid: #202227;
+  --color-surface-hover: rgba(44, 47, 54, 0.85);
+  --color-surface-active: rgba(54, 58, 66, 0.92);
+  --color-accent-base: #38bdf8;
+  --color-accent-hover: #60a5fa;
+  --color-accent-subtle: rgba(56, 189, 248, 0.15);
+  --color-accent-text: #0b1120;
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-tertiary: #64748b;
+  --color-border: rgba(148, 163, 184, 0.12);
+  --color-border-subtle: rgba(148, 163, 184, 0.06);
+  --color-border-highlight: rgba(255, 255, 255, 0.12);
+  --color-card-specular: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+/* 5. Silver Birch: Light Metallic Silver & Deep Indigo */
+[data-theme="silver-birch"] {
+  --color-bg-base: #edf0f4;
+  --color-surface-base: rgba(255, 255, 255, 0.84);
+  --color-surface-solid: #ffffff;
+  --color-surface-hover: rgba(255, 255, 255, 0.96);
+  --color-surface-active: #e2e5eb;
+  --color-accent-base: #4f46e5;
+  --color-accent-hover: #6366f1;
+  --color-accent-subtle: rgba(79, 70, 229, 0.1);
+  --color-accent-text: #ffffff;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #64748b;
+  --color-text-tertiary: #94a3b8;
+  --color-border: rgba(15, 23, 42, 0.09);
+  --color-border-subtle: rgba(15, 23, 42, 0.05);
+  --color-border-highlight: rgba(255, 255, 255, 0.9);
+  --color-card-specular: inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+  --color-scrim: rgba(15, 23, 42, 0.2);
+  --color-code-bg: rgba(15, 23, 42, 0.05);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05);
+  --shadow-card: 0 4px 20px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+  --shadow-dock: 0 14px 44px -4px rgba(15, 23, 42, 0.15), 0 4px 16px -2px rgba(15, 23, 42, 0.06);
+}
+
+/* 6. Titanium Sunset: iPhone Desert Titanium Warm Dusk */
+[data-theme="titanium-sunset"] {
+  --color-bg-base: #1c1815;
+  --color-surface-base: rgba(36, 30, 26, 0.75);
+  --color-surface-solid: #26201b;
+  --color-surface-hover: rgba(50, 42, 36, 0.85);
+  --color-surface-active: rgba(64, 54, 46, 0.92);
+  --color-accent-base: #f59e0b;
+  --color-accent-hover: #fbbf24;
+  --color-accent-subtle: rgba(245, 158, 11, 0.15);
+  --color-accent-text: #1a1208;
+  --color-text-primary: #fafaf9;
+  --color-text-secondary: #a8a29e;
+  --color-text-tertiary: #78716c;
+  --color-border: rgba(245, 158, 11, 0.14);
+  --color-border-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-highlight: rgba(245, 158, 11, 0.2);
+  --color-card-specular: inset 0 1px 0 0 rgba(251, 191, 36, 0.12);
+}
+
+/* 7. Alpine Glacier: Light Arctic Frosted Glass & Sky Blue */
+[data-theme="alpine-glacier"] {
+  --color-bg-base: #eef6fc;
+  --color-surface-base: rgba(255, 255, 255, 0.82);
+  --color-surface-solid: #ffffff;
+  --color-surface-hover: rgba(255, 255, 255, 0.96);
+  --color-surface-active: #dbeafe;
+  --color-accent-base: #0284c7;
+  --color-accent-hover: #0369a1;
+  --color-accent-subtle: rgba(2, 132, 199, 0.11);
+  --color-accent-text: #ffffff;
+  --color-text-primary: #0c4a6e;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94a3b8;
+  --color-border: rgba(2, 132, 199, 0.12);
+  --color-border-subtle: rgba(2, 132, 199, 0.06);
+  --color-border-highlight: rgba(255, 255, 255, 0.9);
+  --color-card-specular: inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+  --color-scrim: rgba(12, 74, 110, 0.2);
+  --color-code-bg: rgba(2, 132, 199, 0.05);
+  --shadow-sm: 0 1px 3px rgba(2, 132, 199, 0.05);
+  --shadow-card: 0 4px 20px -2px rgba(2, 132, 199, 0.06), 0 2px 6px -1px rgba(2, 132, 199, 0.04);
+  --shadow-dock: 0 14px 44px -4px rgba(2, 132, 199, 0.15), 0 4px 16px -2px rgba(2, 132, 199, 0.06);
+}
+
+/* 8. Pacific Blue: Deep Ocean Midnight & Radiant Azure */
+[data-theme="pacific-blue"] {
+  --color-bg-base: #0a1322;
+  --color-surface-base: rgba(16, 29, 50, 0.74);
+  --color-surface-solid: #12213a;
+  --color-surface-hover: rgba(24, 43, 74, 0.85);
+  --color-surface-active: rgba(33, 58, 99, 0.92);
+  --color-accent-base: #00b4d8;
+  --color-accent-hover: #48cae4;
+  --color-accent-subtle: rgba(0, 180, 216, 0.15);
+  --color-accent-text: #051622;
+  --color-text-primary: #f0f9ff;
+  --color-text-secondary: #93c5fd;
+  --color-text-tertiary: #60a5fa;
+  --color-border: rgba(0, 180, 216, 0.16);
+  --color-border-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-highlight: rgba(0, 180, 216, 0.25);
+  --color-card-specular: inset 0 1px 0 0 rgba(72, 202, 228, 0.14);
+}
+
+/* 9. Forest Evergreen: Dark Alpine Moss & Emerald Mint */
+[data-theme="forest-evergreen"] {
+  --color-bg-base: #0c1611;
+  --color-surface-base: rgba(18, 33, 25, 0.74);
+  --color-surface-solid: #15271e;
+  --color-surface-hover: rgba(26, 48, 36, 0.85);
+  --color-surface-active: rgba(35, 64, 48, 0.92);
+  --color-accent-base: #10b981;
+  --color-accent-hover: #34d399;
+  --color-accent-subtle: rgba(16, 185, 129, 0.15);
+  --color-accent-text: #022013;
+  --color-text-primary: #ecfdf5;
+  --color-text-secondary: #a7f3d0;
+  --color-text-tertiary: #6ee7b7;
+  --color-border: rgba(16, 185, 129, 0.16);
+  --color-border-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-highlight: rgba(16, 185, 129, 0.25);
+  --color-card-specular: inset 0 1px 0 0 rgba(52, 211, 153, 0.14);
+}
+
+/* 10. Royal Purple: Deep Violet Evening & Vibrant Lilac */
+[data-theme="royal-purple"] {
+  --color-bg-base: #120b1b;
+  --color-surface-base: rgba(28, 17, 42, 0.74);
+  --color-surface-solid: #211531;
+  --color-surface-hover: rgba(42, 26, 63, 0.85);
+  --color-surface-active: rgba(56, 35, 84, 0.92);
+  --color-accent-base: #a855f7;
+  --color-accent-hover: #c084fc;
+  --color-accent-subtle: rgba(168, 85, 247, 0.16);
+  --color-accent-text: #ffffff;
+  --color-text-primary: #faf5ff;
+  --color-text-secondary: #d8b4fe;
+  --color-text-tertiary: #a855f7;
+  --color-border: rgba(168, 85, 247, 0.18);
+  --color-border-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-highlight: rgba(168, 85, 247, 0.28);
+  --color-card-specular: inset 0 1px 0 0 rgba(192, 132, 252, 0.14);
+}

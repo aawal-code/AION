@@ -1,0 +1,1867 @@
+/**
+ * AION Smart Devices & Full PC Controls Manager
+ * macOS/iPadOS Split-Pane Desktop Layout & Clean Device Registry Controller
+ */
+
+import { t } from './i18n.js';
+import { getSvgIcon } from './icons.js';
+import { showToast, getPairingHostUrl } from './app.js';
+import { addActivity, getState, subscribe } from './state.js';
+
+let cachedDevices = [];
+let cachedWol = null;
+let cachedProcesses = [];
+let selectedDeviceId = 'local'; // 'all' | 'assistant' | device.id
+let showAllProcesses = false;
+let editingDeviceId = null;
+let appMode = (typeof localStorage !== 'undefined' && localStorage.getItem('aion_dev_mode') === 'true') ? 'advanced' : 'simple';
+
+// ==========================================================================
+// Silent Data Fetching (Never spam toasts on background refreshes)
+// ==========================================================================
+
+export function isClientOnMobile() {
+  if (typeof navigator !== 'undefined') {
+    if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) return true;
+    if (/Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) return true;
+  }
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('aion_paired_token')) return true;
+  if (typeof document !== 'undefined' && document.cookie && document.cookie.includes('aion_token')) return true;
+  if (typeof window !== 'undefined' && window.innerWidth <= 768) return true;
+  return false;
+}
+
+export async function fetchDevices() {
+  try {
+    const res = await fetch('/api/devices');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.status === 'ok' && Array.isArray(data.devices)) {
+      cachedDevices = data.devices;
+      
+      const userSelected = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('aion_selected_device') : null;
+      if (userSelected && cachedDevices.some(d => d.id === userSelected)) {
+        selectedDeviceId = userSelected;
+      } else if (isClientOnMobile()) {
+        // When client is mobile (e.g. iPhone), default active view to the iPhone itself
+        const mobileDev = cachedDevices.find(d => isMobileDevice(d));
+        selectedDeviceId = mobileDev ? mobileDev.id : (cachedDevices[0]?.id || 'local');
+      } else {
+        if (!selectedDeviceId || selectedDeviceId === 'local' || !cachedDevices.some(d => d.id === selectedDeviceId)) {
+          if (selectedDeviceId !== 'all' && selectedDeviceId !== 'assistant') {
+            selectedDeviceId = cachedDevices[0]?.id || 'local';
+          }
+        }
+      }
+      renderAll();
+    }
+  } catch (err) {
+    // Graceful background silence
+    console.debug('[AION Devices] Background fetch silent error:', err.message);
+  }
+}
+
+export async function fetchWolStatus() {
+  try {
+    const res = await fetch('/api/system/wol');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.status === 'ok') {
+      cachedWol = data;
+      renderDeviceCanvasHeader();
+      renderSettingsWol();
+    }
+  } catch (err) {
+    console.debug('[AION WoL] Background fetch silent error:', err.message);
+  }
+}
+
+export function renderSettingsWol() {
+  const badge = document.getElementById('settingsWolStatusBadge');
+  const btn = document.getElementById('btnEnableWol');
+  if (!badge) return;
+
+  if (!cachedWol || !cachedWol.supported) {
+    badge.textContent = 'Not Supported';
+    badge.title = 'No physical network adapter supporting Wake-on-LAN was detected.';
+    badge.style.color = 'var(--text-tertiary)';
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+
+  const state = cachedWol.state || (cachedWol.enabled ? (cachedWol.fastStartupBlocking ? 'fast_startup_blocked' : 'os_ready') : 'disabled');
+
+  if (state === 'os_ready') {
+    badge.textContent = t('wolOsReady') || 'OS Ready (Verify BIOS)';
+    badge.title = t('wolTooltipBios') || 'Adapter WoL is active and Fast Startup is disabled. Ensure WoL is enabled in UEFI/BIOS.';
+    badge.style.color = 'var(--color-success)';
+    if (btn) btn.style.display = 'none';
+  } else if (state === 'fast_startup_blocked') {
+    badge.textContent = t('wolFastStartupWarn') || 'Fast Startup Blocking';
+    badge.title = 'Windows Fast Startup blocks WoL magic packets on hybrid shutdown. Click below to disable Fast Startup.';
+    badge.style.color = 'var(--color-warning)';
+    if (btn) {
+      btn.style.display = 'inline-flex';
+      btn.textContent = t('btnEnableWol') || 'Enable in Windows';
+    }
+  } else {
+    badge.textContent = t('wolDisabled') || 'Disabled in OS';
+    badge.title = 'Wake on Magic Packet is not currently enabled on the active physical network adapter.';
+    badge.style.color = 'var(--color-warning)';
+    if (btn) {
+      btn.style.display = 'inline-flex';
+      btn.textContent = t('btnEnableWol') || 'Enable in Windows';
+    }
+  }
+}
+
+let localTelemetryTimer = null;
+let currentTelemetryDeckConfig = {
+  cards: ['cpu', 'memory', 'disk', 'gpu', 'network', 'uptime'],
+  order: ['cpu', 'memory', 'disk', 'gpu', 'network', 'uptime'],
+};
+
+export const DECK_CARD_LABELS = {
+  cpu: 'CPU Utilization',
+  memory: 'System Memory',
+  disk: 'Storage & I/O',
+  gpu: 'GPU & VRAM',
+  network: 'Network Throughput',
+  uptime: 'System Uptime',
+};
+
+export function applyTelemetryDeckConfig(deckConfig) {
+  if (deckConfig) {
+    if (Array.isArray(deckConfig.cards)) currentTelemetryDeckConfig.cards = [...deckConfig.cards];
+    if (Array.isArray(deckConfig.order)) currentTelemetryDeckConfig.order = [...deckConfig.order];
+  }
+
+  const grid = document.querySelector('.telemetry-grid');
+  if (!grid) return;
+
+  const { cards, order } = currentTelemetryDeckConfig;
+
+  order.forEach((cardKey, index) => {
+    const cardEl = grid.querySelector(`[data-card="${cardKey}"]`);
+    if (cardEl) {
+      grid.appendChild(cardEl);
+      cardEl.style.order = index;
+      const isEnabled = cards.includes(cardKey);
+      cardEl.style.display = isEnabled ? 'flex' : 'none';
+      cardEl.dataset.enabled = isEnabled ? 'true' : 'false';
+    }
+  });
+}
+
+export async function loadTelemetryDeckConfig() {
+  try {
+    const res = await fetch('/api/config');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.config?.telemetryDeck) {
+        applyTelemetryDeckConfig(data.config.telemetryDeck);
+      }
+    }
+  } catch {}
+}
+let systemCapabilities = null;
+
+export async function fetchCapabilities() {
+  try {
+    const res = await fetch('/api/capabilities');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === 'ok' && data.capabilities) {
+        systemCapabilities = data.capabilities;
+        applyCapabilitiesVisibility(systemCapabilities);
+        return systemCapabilities;
+      }
+    }
+  } catch (err) {
+    console.debug('[AION Capabilities] fetch error:', err.message);
+  }
+  return null;
+}
+
+export function applyCapabilitiesVisibility(caps) {
+  if (!caps) return;
+  // Auto-hide battery card completely if hardware has no battery
+  const batteryCard = document.getElementById('telemBatteryCard');
+  if (batteryCard && !caps.hasBattery) {
+    batteryCard.style.display = 'none';
+  }
+  // Auto-hide screen view if not configured
+  const btnViewScreen = document.getElementById('btnRemoteViewScreen');
+  if (btnViewScreen) {
+    btnViewScreen.style.display = caps.hasRustDesk ? 'flex' : 'none';
+  }
+  // Auto-hide WoL button if host doesn't support WoL
+  const btnTestWol = document.getElementById('btnRemoteTestWol');
+  if (btnTestWol && !caps.hasWol) {
+    btnTestWol.style.display = 'none';
+  }
+}
+
+export function startLocalTelemetryPolling() {
+  stopLocalTelemetryPolling();
+  fetchLocalTelemetry();
+  localTelemetryTimer = setInterval(() => {
+    fetchLocalTelemetry();
+  }, 10000); // 10000ms (10 seconds) clean interval
+}
+
+export function stopLocalTelemetryPolling() {
+  if (localTelemetryTimer) {
+    clearInterval(localTelemetryTimer);
+    localTelemetryTimer = null;
+  }
+}
+
+export async function fetchLocalTelemetry() {
+  try {
+    const res = await fetch('/api/system/telemetry');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.status !== 'ok') return;
+
+    const cards = currentTelemetryDeckConfig.cards || ['cpu', 'memory', 'disk', 'gpu', 'network', 'uptime'];
+
+    // Update CPU card
+    const cpuCard = document.getElementById('telemCpuCard');
+    if (cpuCard) cpuCard.style.display = cards.includes('cpu') ? 'flex' : 'none';
+
+    if (data.cpu) {
+      const cpuVal = document.getElementById('telemCpuVal');
+      const cpuBar = document.getElementById('telemCpuBar');
+      const cpuPill = document.getElementById('telemCpuPill');
+      const pct = Math.round(data.cpu.percent ?? data.cpu.usagePercent ?? 0);
+      if (cpuVal) cpuVal.textContent = `${pct}%`;
+      if (cpuBar) cpuBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      if (cpuPill) cpuPill.textContent = pct > 75 ? 'Heavy Load' : (pct > 30 ? 'Active' : 'Idle');
+    }
+
+    // Update Memory card
+    const memCard = document.getElementById('telemMemCard');
+    if (memCard) memCard.style.display = cards.includes('memory') ? 'flex' : 'none';
+
+    if (data.memory) {
+      const memVal = document.getElementById('telemMemVal');
+      const memBar = document.getElementById('telemMemBar');
+      const memMeta = document.getElementById('telemMemMeta');
+      const totalMb = data.memory.totalMb || 1;
+      const usedMb = data.memory.usedMb ?? (totalMb - (data.memory.freeMb || data.memory.availableMb || 0));
+      const freeMb = data.memory.freeMb ?? data.memory.availableMb ?? (totalMb - usedMb);
+      const usedGb = (usedMb / 1024).toFixed(1);
+      const totalGb = (totalMb / 1024).toFixed(1);
+      const freeGb = (freeMb / 1024).toFixed(1);
+      const pct = Math.round(data.memory.percent ?? data.memory.usedPercent ?? (usedMb / totalMb * 100));
+      if (memVal) memVal.textContent = `${usedGb} GB / ${totalGb} GB`;
+      if (memBar) memBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      if (memMeta) memMeta.textContent = `Available: ${freeGb} GB (${Math.max(0, 100 - pct)}% free)`;
+    }
+
+    // Update GPU & VRAM card
+    const gpuCard = document.getElementById('telemGpuCard');
+    if (gpuCard) gpuCard.style.display = cards.includes('gpu') ? 'flex' : 'none';
+
+    const gpuData = data.gpu || data.telemetry?.gpu;
+    if (gpuData) {
+      const gpuVal = document.getElementById('telemGpuVal');
+      const gpuBar = document.getElementById('telemGpuBar');
+      const gpuMeta = document.getElementById('telemGpuMeta');
+      const gpuPill = document.getElementById('telemGpuPill');
+      const pct = Math.round(gpuData.usagePercent ?? gpuData.percent ?? 0);
+      if (gpuVal) gpuVal.textContent = `${pct}%`;
+      if (gpuBar) gpuBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      if (gpuMeta) {
+        if (gpuData.memoryTotalMb) {
+          const usedGb = (gpuData.memoryUsedMb / 1024).toFixed(1);
+          const totalGb = (gpuData.memoryTotalMb / 1024).toFixed(1);
+          gpuMeta.textContent = `VRAM: ${usedGb} GB / ${totalGb} GB (${gpuData.memoryPercent || 0}%)`;
+        } else {
+          gpuMeta.textContent = gpuData.model || 'Dedicated Hardware Acceleration';
+        }
+      }
+      if (gpuPill) {
+        gpuPill.textContent = gpuData.available ? (pct > 60 ? 'Heavy Load' : (pct > 15 ? 'Active' : 'Idle')) : 'Integrated';
+      }
+    }
+
+    // Update Network Throughput card
+    const netCard = document.getElementById('telemNetCard');
+    if (netCard) netCard.style.display = cards.includes('network') ? 'flex' : 'none';
+
+    const netData = data.network || data.telemetry?.network;
+    if (netData) {
+      const netVal = document.getElementById('telemNetVal');
+      const netBar = document.getElementById('telemNetBar');
+      const netMeta = document.getElementById('telemNetMeta');
+      const rxMbps = netData.rxMbps ?? 0;
+      const txMbps = netData.txMbps ?? 0;
+      const totalMbps = (rxMbps + txMbps).toFixed(2);
+      if (netVal) netVal.textContent = `${totalMbps} Mbps`;
+      if (netBar) {
+        const fill = Math.min(100, Math.max(4, Math.round((rxMbps + txMbps) * 2)));
+        netBar.style.width = `${fill}%`;
+      }
+      if (netMeta) {
+        netMeta.textContent = `Rx: ${netData.rxFormatted || '0 B/s'} • Tx: ${netData.txFormatted || '0 B/s'}`;
+      }
+    }
+
+    // Update System Uptime card
+    const uptimeCard = document.getElementById('telemUptimeCard');
+    if (uptimeCard) uptimeCard.style.display = cards.includes('uptime') ? 'flex' : 'none';
+
+    const uptimeSec = data.uptimeSeconds ?? data.telemetry?.uptimeSeconds;
+    const uptimeFmt = data.uptimeFormatted || data.telemetry?.uptimeFormatted;
+    const uptimeVal = document.getElementById('telemUptimeVal');
+    const uptimeMeta = document.getElementById('telemUptimeMeta');
+    if (uptimeVal) {
+      if (uptimeFmt) {
+        uptimeVal.textContent = uptimeFmt;
+      } else if (typeof uptimeSec === 'number') {
+        const hrs = Math.floor(uptimeSec / 3600);
+        const mins = Math.floor((uptimeSec % 3600) / 60);
+        uptimeVal.textContent = `${hrs}h ${mins}m`;
+      }
+    }
+    if (uptimeMeta) {
+      uptimeMeta.textContent = 'Host Node Active';
+    }
+
+    // Laptop Away Mode dynamic card swap:
+    // When the laptop is in 'Away' mode, swap out the Disk IO telemetry card for a live Battery % and Charging Status card
+    const diskCard = document.getElementById('telemDiskCard');
+    const batteryCard = document.getElementById('telemBatteryCard');
+
+    const savedRole = localStorage.getItem('aion_device_role') || '';
+    const isLaptop = savedRole.toLowerCase() === 'laptop' || (data.laptopMode && data.laptopMode.isLaptop);
+    const effectiveMode = data.laptopMode?.effectiveMode || (data.laptopMode?.mode === 'Away' ? 'Away' : 'Home');
+    const hasRealBattery = Boolean(data.battery?.hasBattery);
+    const isAwayMode = effectiveMode === 'Away' && (isLaptop || hasRealBattery);
+
+    if (isAwayMode && hasRealBattery) {
+      if (diskCard) diskCard.style.display = 'none';
+      if (batteryCard) {
+        batteryCard.style.display = 'flex';
+        const batteryVal = document.getElementById('telemBatteryVal');
+        const batteryBar = document.getElementById('telemBatteryBar');
+        const batteryMeta = document.getElementById('telemBatteryMeta');
+        const batteryPill = document.getElementById('telemBatteryPill');
+
+        const battPct = Math.round(data.battery?.percent ?? 100);
+        const isCharging = Boolean(data.battery?.charging);
+        const acPower = Boolean(data.battery?.acPower);
+
+        if (batteryVal) batteryVal.textContent = `${battPct}%`;
+        if (batteryBar) {
+          batteryBar.style.width = `${Math.min(100, Math.max(0, battPct))}%`;
+          batteryBar.style.background = battPct <= 20 ? 'var(--color-danger, #ef4444)' : (battPct <= 50 ? 'var(--color-warning, #f59e0b)' : 'var(--color-success, #22c55e)');
+        }
+        if (batteryMeta) {
+          batteryMeta.textContent = isCharging ? `Charging • ${acPower ? 'AC Power' : 'Battery'}` : (acPower ? 'AC Connected (Standby)' : 'On Battery Power');
+        }
+        if (batteryPill) {
+          batteryPill.textContent = isCharging ? 'Charging' : (acPower ? 'AC Connected' : 'Away Mode');
+          batteryPill.style.color = isCharging ? 'var(--color-success, #22c55e)' : (acPower ? 'var(--color-primary, #38bdf8)' : 'var(--color-warning, #f59e0b)');
+        }
+      }
+    } else {
+      if (batteryCard) batteryCard.style.display = 'none';
+      if (diskCard) diskCard.style.display = cards.includes('disk') ? 'flex' : 'none';
+
+      if (data.disk) {
+        const diskVal = document.getElementById('telemDiskVal');
+        const diskBar = document.getElementById('telemDiskBar');
+        const diskMeta = document.getElementById('telemDiskMeta');
+        const drive = data.disk.drive || data.disk;
+        const totalGb = drive.totalGb ?? data.disk.totalGb ?? 0;
+        const usedGb = drive.usedGb ?? data.disk.usedGb ?? 0;
+        const freeGb = drive.freeGb ?? data.disk.freeGb ?? (totalGb - usedGb);
+        const pct = Math.round(drive.usedPercent ?? data.disk.percent ?? data.disk.percentDiskTime ?? (totalGb ? usedGb / totalGb * 100 : 0));
+        const readSpeed = data.disk.readFormatted || (data.disk.readSec ? `${data.disk.readSec} MB/s` : '0 B/s');
+        const writeSpeed = data.disk.writeFormatted || (data.disk.writeSec ? `${data.disk.writeSec} MB/s` : '0 B/s');
+
+        if (diskVal) diskVal.textContent = `${usedGb} GB / ${totalGb} GB`;
+        if (diskBar) diskBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+        if (diskMeta) diskMeta.textContent = `Free: ${freeGb} GB • Read: ${readSpeed} Write: ${writeSpeed}`;
+      }
+    }
+  } catch (err) {
+    console.debug('[AION Telemetry] fetch error:', err.message);
+  }
+}
+
+export async function fetchRunningProcesses() {
+  try {
+    const res = await fetch('/api/system/apps');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === 'ok' && Array.isArray(data.apps)) {
+        cachedProcesses = data.apps.map((app) => ({
+          name: app.name,
+          processName: app.processName || app.name.toLowerCase().replace(/\s+/g, ''),
+          pids: app.pids || (app.pid ? [app.pid] : []),
+          pidCount: app.pidCount || (app.pids ? app.pids.length : 1),
+          memoryMb: Math.round(app.memoryMb || 0),
+          cpuPercent: Math.round(app.cpuPercent || 0),
+          path: app.path || '',
+        }));
+        renderRunningProcesses();
+        return;
+      }
+    }
+
+    const fallbackRes = await fetch('/api/system/processes');
+    if (!fallbackRes.ok) return;
+    const fallbackData = await fallbackRes.json();
+    if (fallbackData.status === 'ok' && Array.isArray(fallbackData.processes)) {
+      cachedProcesses = fallbackData.processes.map((proc) => ({
+        name: proc.name,
+        processName: proc.processName || proc.name.toLowerCase().replace(/\s+/g, ''),
+        pids: [proc.pid || 0],
+        pidCount: 1,
+        memoryMb: Math.round(proc.memoryMb || 0),
+        cpuPercent: 0,
+        path: '',
+      }));
+      renderRunningProcesses();
+    }
+  } catch (err) {
+    console.debug('[AION Processes] Background fetch silent error:', err.message);
+  }
+}
+
+export async function killApp(appName, procName = '') {
+  try {
+    const res = await fetch('/api/system/apps/kill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: appName }),
+    });
+
+    if (!res.ok) {
+      await fetch('/api/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'kill_process', target: procName || appName }),
+      });
+    }
+
+    showToast(`Terminated ${appName}`, 'power');
+    addActivity('Quit Application', `Terminated ${appName}`, 'power');
+    cachedProcesses = cachedProcesses.filter((p) => p.name !== appName && p.processName !== procName);
+    const countEl = document.getElementById('appsCountBadge');
+    if (countEl) countEl.textContent = `${cachedProcesses.length} apps`;
+  } catch (err) {
+    showToast(`Failed terminating ${appName}: ${err.message}`, 'close');
+  }
+}
+
+// ==========================================================================
+// User-Triggered Actions (Explicit feedback with toasts)
+// ==========================================================================
+
+export async function executeControlAction(action, target = '') {
+  try {
+    const res = await fetch('/api/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, target }),
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      if (action === 'screen_off') {
+        showToast(t('actionScreenOffDesc'), 'screenOff');
+        addActivity(t('actionScreenOff'), t('actionScreenOffDesc'), 'screenOff');
+      } else if (action === 'shutdown') {
+        showToast(t('actionShutdownDesc'), 'shutdown');
+        addActivity(t('actionShutdown'), t('actionShutdownDesc'), 'shutdown');
+      } else if (action === 'sleep') {
+        showToast(t('activitySleepDone'), 'moon');
+        addActivity(t('actionSleep'), t('activitySleepDone'), 'moon');
+      } else if (action === 'lock') {
+        showToast(t('activityLockDone'), 'lock');
+        addActivity(t('actionLock'), t('activityLockDone'), 'lock');
+      } else if (action === 'kill_process') {
+        showToast(t('activityKillDone', { target }), 'power');
+        addActivity(t('actionQuit'), t('activityKillDone', { target }), 'power');
+        setTimeout(() => fetchRunningProcesses(), 1200);
+      }
+    } else {
+      showToast(data.error || 'Action failed', 'close');
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'close');
+  }
+}
+
+export async function wakeDevice(deviceId, mac = '') {
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/wake`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mac }),
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      showToast(t('wakeSent', { target: deviceId }), 'wake');
+      addActivity(t('btnWake'), t('wakeSent', { target: deviceId }), 'wake');
+    } else {
+      showToast(data.error || 'Wake failed', 'close');
+    }
+  } catch (err) {
+    showToast(`Wake error: ${err.message}`, 'close');
+  }
+}
+
+export async function enableSystemWol() {
+  try {
+    const res = await fetch('/api/system/wol/enable', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      showToast(t('wolEnabledSuccess'), 'check');
+      addActivity('Wake-on-LAN', t('wolEnabledSuccess'), 'check');
+      await fetchWolStatus();
+    } else {
+      showToast(data.error || 'Failed to enable WoL in OS', 'close');
+    }
+  } catch (err) {
+    showToast(`WoL error: ${err.message}`, 'close');
+  }
+}
+
+export async function saveDeviceEdit(id, patch) {
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      showToast(t('toastSettingsSaved'), 'check');
+      addActivity(t('editDeviceTitle'), `${data.device.name} updated`, 'edit');
+      await fetchDevices();
+      closeEditModal();
+    } else {
+      showToast(data.error || 'Failed updating device', 'close');
+    }
+  } catch (err) {
+    showToast(`Update error: ${err.message}`, 'close');
+  }
+}
+
+// ==========================================================================
+// Device Navigation & Selection
+// ==========================================================================
+
+export function selectDevice(id) {
+  selectedDeviceId = id;
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem('aion_selected_device', id);
+  }
+  renderAll();
+
+  // Close mobile sidebar if open
+  closeMobileSidebar();
+}
+
+if (typeof window !== 'undefined') {
+  window.aionSelectDevice = selectDevice;
+}
+
+function getSelectedDevice() {
+  return cachedDevices.find((d) => d.id === selectedDeviceId) || cachedDevices[0] || null;
+}
+
+export function isMobileDevice(dev) {
+  if (!dev) return false;
+  const t = (dev.type || '').toLowerCase();
+  const os = (dev.os || '').toLowerCase();
+  return (
+    ['phone', 'mobile', 'tablet', 'ipad', 'iphone', 'android'].includes(t) ||
+    ['ios', 'android', 'ipados'].includes(os)
+  );
+}
+
+export function getDeviceIconName(type) {
+  const t = (type || '').toLowerCase();
+  if (t === 'laptop') return 'laptop';
+  if (t === 'server') return 'server';
+  if (t === 'phone') return 'phone';
+  if (t === 'tablet') return 'tablet';
+  return 'desktop';
+}
+
+// ==========================================================================
+// Master UI Rendering
+// ==========================================================================
+
+export function renderAll() {
+  renderSidebarDevices();
+  renderActiveCanvasView();
+}
+
+function renderSidebarDevices() {
+  const listEl = document.getElementById('sidebarDevicesList');
+  const countEl = document.getElementById('sidebarDeviceCount');
+  const allDevicesBtn = document.getElementById('navItemAllDevices');
+  const assistantBtn = document.getElementById('navItemAssistant');
+
+  if (countEl) countEl.textContent = String(cachedDevices.length);
+
+  // Active state for static nav items
+  if (allDevicesBtn) allDevicesBtn.classList.toggle('active', selectedDeviceId === 'all');
+  if (assistantBtn) assistantBtn.classList.toggle('active', selectedDeviceId === 'assistant');
+
+  if (!listEl) return;
+
+  listEl.innerHTML = cachedDevices
+    .map((dev) => {
+      const isSelected = dev.id === selectedDeviceId;
+      const isOnline = dev.online !== false;
+      const iconName = getDeviceIconName(dev.type);
+
+      return `
+      <button class="sidebar-device-item ${isSelected ? 'active' : ''}" data-device-id="${dev.id}" type="button">
+        <span class="device-dot ${isOnline ? 'online' : 'offline'}"></span>
+        <span class="sidebar-device-icon">${getSvgIcon(iconName, 'icon-sm')}</span>
+        <span class="sidebar-device-name">${escapeHtml(dev.name)}</span>
+      </button>
+    `;
+    })
+    .join('');
+
+  listEl.querySelectorAll('.sidebar-device-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-device-id');
+      if (id) selectDevice(id);
+    });
+  });
+}
+
+function renderActiveCanvasView() {
+  const deviceView = document.getElementById('canvasDeviceView');
+  const allDevicesView = document.getElementById('canvasAllDevicesView');
+  const chatView = document.getElementById('canvasChatView');
+
+  if (selectedDeviceId === 'all') {
+    stopLocalTelemetryPolling();
+    if (deviceView) deviceView.style.display = 'none';
+    if (chatView) chatView.style.display = 'none';
+    if (allDevicesView) {
+      allDevicesView.style.display = 'block';
+      renderAllDevicesCards();
+    }
+  } else if (selectedDeviceId === 'assistant') {
+    stopLocalTelemetryPolling();
+    if (deviceView) deviceView.style.display = 'none';
+    if (allDevicesView) allDevicesView.style.display = 'none';
+    if (chatView) chatView.style.display = 'block';
+  } else {
+    if (allDevicesView) allDevicesView.style.display = 'none';
+    if (chatView) chatView.style.display = 'none';
+    if (deviceView) {
+      deviceView.style.display = 'block';
+      const dev = getSelectedDevice();
+      renderDeviceCanvasHeader();
+
+      const setupCard = document.getElementById('mobileSetupCard');
+      if (setupCard && isClientOnMobile()) {
+        setupCard.style.display = 'none';
+      }
+
+      const desktopPower = document.getElementById('desktopPowerSection');
+      const desktopMedia = document.getElementById('mediaDeckSection');
+      const desktopApps = document.getElementById('desktopAppsSection');
+      const localTelemetry = document.getElementById('localTelemetrySection');
+      const remoteActions = document.getElementById('remoteActionsSection');
+      const mobileCompanion = document.getElementById('mobileCompanionDeck');
+
+      const isMobile = isMobileDevice(dev);
+      const isLocal = !dev || dev.isLocal === true || dev.id === 'local';
+
+      if (isMobile) {
+        stopLocalTelemetryPolling();
+        // Mobile / iPhone / Tablet view:
+        // Hide desktop Power, Media, Apps, and Telemetry; show dedicated Mobile Companion Deck
+        if (desktopPower) desktopPower.style.display = 'none';
+        if (desktopMedia) desktopMedia.style.display = 'none';
+        if (desktopApps) desktopApps.style.display = 'none';
+        if (localTelemetry) localTelemetry.style.display = 'none';
+        if (remoteActions) remoteActions.style.display = 'none';
+        if (mobileCompanion) {
+          mobileCompanion.style.display = 'block';
+          renderMobileCompanionDeck(dev);
+        }
+      } else if (isLocal) {
+        // Local desktop / laptop view:
+        // Hide power buttons (prevent accidental self-lock/sleep/shutdown)
+        // Hide remote actions
+        // Render Local Telemetry Deck (live CPU, RAM, Disk charts) and Clean App Manager
+        if (desktopPower) desktopPower.style.display = 'none';
+        if (remoteActions) remoteActions.style.display = 'none';
+        if (mobileCompanion) mobileCompanion.style.display = 'none';
+        if (desktopMedia) desktopMedia.style.display = 'block';
+        if (desktopApps) {
+          desktopApps.style.display = 'block';
+          renderRunningProcesses();
+        }
+        if (localTelemetry) {
+          localTelemetry.style.display = 'block';
+          startLocalTelemetryPolling();
+        }
+      } else {
+        stopLocalTelemetryPolling();
+        // Remote PC / laptop view:
+        // Render touch-friendly Power Deck (Lock, Sleep, Shut Down, Screen Off)
+        // Render Media Controls
+        // Render 'View Screen' (RustDesk) + 'Test WoL' action row
+        // Hide local telemetry deck
+        if (localTelemetry) localTelemetry.style.display = 'none';
+        if (mobileCompanion) mobileCompanion.style.display = 'none';
+        if (desktopPower) desktopPower.style.display = 'block';
+        if (desktopMedia) desktopMedia.style.display = 'block';
+        if (remoteActions) {
+          remoteActions.style.display = 'block';
+          setupRemoteActions(dev);
+        }
+        if (desktopApps) {
+          desktopApps.style.display = 'block';
+          renderRunningProcesses();
+        }
+      }
+
+      renderCompactActivity();
+    }
+  }
+}
+
+function setupRemoteActions(dev) {
+  const btnViewScreen = document.getElementById('btnRemoteViewScreen');
+  const btnTestWol = document.getElementById('btnRemoteTestWol');
+
+  if (btnViewScreen) {
+    btnViewScreen.onclick = () => {
+      const target = dev ? (dev.tailscaleIp || dev.lanIp || dev.id) : '';
+      if (target) {
+        window.location.href = `rustdesk://${target}`;
+      }
+    };
+  }
+
+  if (btnTestWol) {
+    btnTestWol.onclick = () => {
+      if (dev) {
+        wakeDevice(dev.id, dev.mac);
+      }
+    };
+  }
+}
+
+function renderDeviceCanvasHeader() {
+  const dev = getSelectedDevice();
+  if (!dev) return;
+
+  const nameEl = document.getElementById('canvasDeviceName');
+  const subtitleEl = document.getElementById('canvasDeviceSubtitle');
+  const statusPill = document.getElementById('canvasDeviceStatusPill');
+  const statusText = document.getElementById('canvasDeviceStatusText');
+  const wakeBtn = document.getElementById('btnCanvasWake');
+  const mobileTopTitle = document.getElementById('mobileTopTitle');
+  const connBadge = document.getElementById('canvasConnectionBadge');
+  const connText = document.getElementById('canvasConnectionText');
+
+  if (nameEl) nameEl.textContent = dev.name;
+  if (mobileTopTitle) mobileTopTitle.textContent = dev.name;
+
+  // Build clean non-jargon subtitle
+  const typeLabel = t(`deviceType${capitalize(dev.type)}`) || dev.type;
+  const osLabel = dev.os || 'OS';
+  const wolReady = (dev.isLocal && cachedWol?.enabled) || (!dev.isLocal && dev.mac);
+  const wolText = wolReady && !isMobileDevice(dev) ? t('wolBadge') : '';
+  const parts = [typeLabel, osLabel, wolText].filter(Boolean);
+
+  if (subtitleEl) subtitleEl.textContent = parts.join(' • ');
+
+  // Status Indicator
+  const isOnline = dev.online !== false;
+  if (statusPill) {
+    statusPill.className = `device-status-pill ${isOnline ? 'online' : 'offline'}`;
+  }
+  if (statusText) {
+    statusText.textContent = isOnline ? t('statusConnected') : t('statusOffline');
+  }
+
+  // Network State Connection Badge ('LAN' or 'Tailscale Mesh')
+  if (connBadge && connText) {
+    const isMesh = Boolean(dev.tailscaleIp || dev.source === 'tailscale' || (dev.telemetry && dev.telemetry.route === 'mesh'));
+    if (isMesh) {
+      connBadge.className = 'device-connection-badge mesh';
+      connText.textContent = 'Tailscale Mesh';
+    } else {
+      connBadge.className = 'device-connection-badge lan';
+      connText.textContent = 'LAN';
+    }
+  }
+
+  // Mobile Client Quick-Switch Pill (Control host workstation vs. Back to iPhone)
+  const btnSwitch = document.getElementById('btnSwitchToHost');
+  const btnSwitchText = document.getElementById('btnSwitchToHostText');
+  if (btnSwitch) {
+    if (isClientOnMobile()) {
+      const hostDev = cachedDevices.find(d => !isMobileDevice(d)) || { name: 'AION Host', id: 'local' };
+      const mobileDev = cachedDevices.find(d => isMobileDevice(d)) || { name: 'This mobile device', id: 'mobile-client' };
+      btnSwitch.style.display = 'inline-flex';
+      if (isMobileDevice(dev)) {
+        if (btnSwitchText) btnSwitchText.textContent = `Control ${hostDev.name || 'AION Host'}`;
+        btnSwitch.onclick = () => selectDevice(hostDev.id);
+      } else {
+        if (btnSwitchText) btnSwitchText.textContent = `Back to ${mobileDev.name || 'this mobile device'}`;
+        btnSwitch.onclick = () => selectDevice(mobileDev.id);
+      }
+    } else {
+      btnSwitch.style.display = 'none';
+    }
+  }
+
+  // View Screen Button (for Desktop / Laptop nodes)
+  const viewScreenBtn = document.getElementById('btnCanvasViewScreen');
+  if (viewScreenBtn) {
+    if (!isMobileDevice(dev) && !dev.isLocal) {
+      viewScreenBtn.style.display = 'inline-flex';
+      viewScreenBtn.onclick = () => {
+        const target = dev.tailscaleIp || dev.lanIp || dev.id;
+        window.location.href = `rustdesk://${target}`;
+      };
+    } else {
+      viewScreenBtn.style.display = 'none';
+    }
+  }
+
+  // Wake Button visibility (only for desktop / PC nodes with MAC)
+  if (wakeBtn) {
+    if (!isOnline && dev.mac && !isMobileDevice(dev) && !dev.isLocal) {
+      wakeBtn.style.display = 'inline-flex';
+      wakeBtn.onclick = () => wakeDevice(dev.id, dev.mac);
+    } else {
+      wakeBtn.style.display = 'none';
+    }
+  }
+
+  // Edit Button click handler
+  const editBtn = document.getElementById('btnEditCurrentDevice');
+  if (editBtn) {
+    editBtn.onclick = () => openEditModal(dev);
+  }
+}
+
+// ==========================================================================
+// Mobile Companion Deck Controller
+// ==========================================================================
+
+export async function sendMobileCommand(deviceId, action, payload = {}) {
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.status !== 'ok') {
+      showToast(data.error || 'Failed sending command to device', 'close');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    showToast(`Command error: ${err.message}`, 'close');
+    return false;
+  }
+}
+
+export function renderMobileCompanionDeck(dev) {
+  if (!dev) return;
+
+  const batteryEl = document.getElementById('mobileBatteryLevel');
+  const batteryBadge = document.getElementById('mobileBatteryBadge');
+  const routeVal = document.getElementById('mobileRouteValue');
+  const wakeState = document.getElementById('mobileWakeState');
+  const lastSeenEl = document.getElementById('mobileLastSeen');
+  const wakeToggle = document.getElementById('toggleMobileWakeLock');
+
+  const telem = dev.telemetry || null;
+
+  // 1. Battery Telemetry
+  if (batteryEl && batteryBadge) {
+    if (telem && typeof telem.battery === 'number' && !isNaN(telem.battery)) {
+      batteryEl.textContent = `${Math.round(telem.battery)}%`;
+      if (telem.charging === true) {
+        batteryBadge.textContent = t('mobileCharging') || 'Charging';
+        batteryBadge.className = 'mobile-pill-badge charging';
+      } else if (telem.charging === false) {
+        batteryBadge.textContent = t('mobileDischarging') || 'On Battery';
+        batteryBadge.className = 'mobile-pill-badge';
+      } else {
+        batteryBadge.textContent = '--';
+        batteryBadge.className = 'mobile-pill-badge';
+      }
+    } else {
+      batteryEl.textContent = '--%';
+      batteryBadge.textContent = dev.os?.toLowerCase().includes('ios') ? 'iOS Sandbox' : '--';
+      batteryBadge.className = 'mobile-pill-badge';
+    }
+  }
+
+  // 2. Connection Route
+  if (routeVal) {
+    const route = telem?.route || (dev.tailscaleIp ? 'mesh' : 'lan');
+    routeVal.textContent = route === 'lan' ? (t('mobileRouteLan') || 'Direct LAN / Wi-Fi') : (t('mobileRouteMesh') || 'Tailscale Mesh');
+  }
+
+  // 3. Screen Wake Lock
+  if (wakeState) {
+    const isActive = Boolean(telem?.wakeLock);
+    wakeState.textContent = isActive ? (t('mobileWakeActive') || 'Active (Always On)') : (t('mobileWakeNormal') || 'Normal Timeout');
+  }
+  if (wakeToggle) {
+    wakeToggle.checked = Boolean(telem?.wakeLock);
+  }
+
+  // 4. Last Seen
+  if (lastSeenEl) {
+    if (telem?.updatedAt) {
+      lastSeenEl.textContent = formatLastSeen(telem.updatedAt);
+    } else if (dev.lastSeen) {
+      lastSeenEl.textContent = formatLastSeen(dev.lastSeen);
+    } else {
+      lastSeenEl.textContent = dev.online !== false ? (t('mobileJustNow') || 'Active now') : (t('statusOffline') || 'Offline');
+    }
+  }
+}
+
+function formatLastSeen(isoStr) {
+  if (!isoStr) return t('mobileJustNow') || 'Active now';
+  try {
+    const diffSec = Math.round((Date.now() - new Date(isoStr).getTime()) / 1000);
+    if (diffSec < 45) return t('mobileJustNow') || 'Active now';
+    if (diffSec < 3600) return `${Math.max(1, Math.round(diffSec / 60))}m ago`;
+    if (diffSec < 86400) return `${Math.round(diffSec / 3600)}h ago`;
+    return new Date(isoStr).toLocaleDateString();
+  } catch {
+    return t('mobileJustNow') || 'Active now';
+  }
+}
+
+// ==========================================================================
+// Section 2: Running Apps (Clean borderless rows, max 6 with toggle)
+// ==========================================================================
+
+export function setAppMode(mode) {
+  appMode = mode === 'advanced' ? 'advanced' : 'simple';
+  if (typeof document !== 'undefined') {
+    const btnSimple = document.getElementById('btnAppModeSimple');
+    const btnAdv = document.getElementById('btnAppModeAdvanced');
+    if (btnSimple && btnAdv) {
+      btnSimple.classList.toggle('active', appMode === 'simple');
+      btnAdv.classList.toggle('active', appMode === 'advanced');
+    }
+    renderRunningProcesses();
+  }
+}
+
+export function getAppMode() {
+  return appMode;
+}
+
+export function renderRunningProcesses() {
+  const container = document.getElementById('canvasProcessesList');
+  const toggleBtn = document.getElementById('btnToggleAllProcesses');
+  const countBadge = document.getElementById('appsCountBadge');
+  if (!container) return;
+
+  if (countBadge) {
+    countBadge.textContent = `${cachedProcesses.length} apps`;
+  }
+
+  const btnSimple = document.getElementById('btnAppModeSimple');
+  const btnAdv = document.getElementById('btnAppModeAdvanced');
+  if (btnSimple && btnAdv) {
+    btnSimple.classList.toggle('active', appMode === 'simple');
+    btnAdv.classList.toggle('active', appMode === 'advanced');
+  }
+
+  if (cachedProcesses.length === 0) {
+    container.innerHTML = `<div class="empty-state-row">${t('noRunningApps') || 'No running applications detected'}</div>`;
+    if (toggleBtn) toggleBtn.style.display = 'none';
+    return;
+  }
+
+  if (toggleBtn) {
+    if (cachedProcesses.length > 6) {
+      toggleBtn.style.display = 'inline-block';
+      toggleBtn.textContent = showAllProcesses
+        ? 'Show less'
+        : `Show all (${cachedProcesses.length})`;
+    } else {
+      toggleBtn.style.display = 'none';
+    }
+  }
+
+  const visible = showAllProcesses ? cachedProcesses : cachedProcesses.slice(0, 6);
+
+  container.innerHTML = visible
+    .map((proc) => {
+      const isAdv = appMode === 'advanced';
+      const pidInfo = proc.pids && proc.pids.length > 0
+        ? ` • PIDs: [${proc.pids.slice(0, 4).join(', ')}${proc.pids.length > 4 ? '...' : ''}] (${proc.pidCount || proc.pids.length} procs)`
+        : '';
+      const subDetail = isAdv
+        ? `${escapeHtml(proc.processName)}.exe${pidInfo}`
+        : `${escapeHtml(proc.processName)}.exe`;
+
+      const cpuBadge = isAdv
+        ? `<span class="app-cpu-badge">${proc.cpuPercent || 0}% CPU</span>`
+        : '';
+
+      const ramText = isAdv ? `${proc.memoryMb} MB RAM` : `${proc.memoryMb} MB`;
+
+      return `
+      <div class="app-row" data-proc-row="${escapeHtml(proc.name)}">
+        <div class="app-row-main">
+          <div class="app-icon-box">
+            ${getSvgIcon('cpu', 'icon-sm')}
+          </div>
+          <div class="app-names">
+            <div class="app-friendly-name">${escapeHtml(proc.name)}</div>
+            <div class="app-sub-detail">${subDetail}</div>
+          </div>
+        </div>
+        <div class="app-row-actions">
+          ${cpuBadge}
+          <span class="app-ram-badge">${ramText}</span>
+          <button class="app-kill-btn" data-app-name="${escapeHtml(proc.name)}" data-proc-name="${escapeHtml(proc.processName)}" title="${t('btnQuitApp') || 'End Task'}" type="button">
+            ${isAdv ? 'Kill' : (t('btnQuitApp') || 'Quit')}
+          </button>
+        </div>
+      </div>
+    `;
+    })
+    .join('');
+
+  container.querySelectorAll('.app-kill-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const row = btn.closest('.app-row');
+      const appName = btn.getAttribute('data-app-name');
+      const procName = btn.getAttribute('data-proc-name');
+      if (row) {
+        row.classList.add('removing');
+        setTimeout(() => row.remove(), 260);
+      }
+      await killApp(appName, procName);
+    });
+  });
+}
+
+// ==========================================================================
+// Section 3: Recent Activity (Compact 3 most recent actions)
+// ==========================================================================
+
+export function renderCompactActivity() {
+  const container = document.getElementById('canvasActivityList');
+  if (!container) return;
+
+  const state = getState();
+  const feed = (state.activityFeed || []).slice(0, 3);
+
+  if (feed.length === 0) {
+    container.innerHTML = `<div class="empty-state-row">${t('activityEmpty')}</div>`;
+    return;
+  }
+
+  container.innerHTML = feed
+    .map(
+      (item) => `
+    <div class="activity-compact-row">
+      <div class="activity-compact-icon">
+        ${getSvgIcon(item.iconType || 'activity', 'icon-sm')}
+      </div>
+      <div class="activity-compact-content">
+        <div class="activity-compact-title">${escapeHtml(item.title)}</div>
+        ${item.desc ? `<div class="activity-compact-desc">${escapeHtml(item.desc)}</div>` : ''}
+      </div>
+      <div class="activity-compact-time">${item.time}</div>
+    </div>
+  `
+    )
+    .join('');
+}
+
+// ==========================================================================
+// All Devices Overview Grid (Canvas View B)
+// ==========================================================================
+
+function renderAllDevicesCards() {
+  const container = document.getElementById('allDevicesCardsGrid');
+  if (!container) return;
+
+  if (cachedDevices.length === 0) {
+    container.innerHTML = `<div class="empty-state-row">No devices registered.</div>`;
+    return;
+  }
+
+  container.innerHTML = cachedDevices
+    .map((dev) => {
+      const isOnline = dev.online !== false;
+      const iconName = getDeviceIconName(dev.type);
+
+      return `
+      <div class="glass-card all-devices-card">
+        <div class="all-devices-card-top">
+          <div class="all-devices-avatar">
+            ${getSvgIcon(iconName, 'icon-lg')}
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <h3 style="font-size: 16px; font-weight: 600;">${escapeHtml(dev.name)}</h3>
+              <span class="device-status-pill ${isOnline ? 'online' : 'offline'}">
+                <span class="status-dot"></span>
+                <span>${isOnline ? t('statusConnected') : t('statusOffline')}</span>
+              </span>
+            </div>
+            <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">
+              ${escapeHtml(dev.os || 'OS')} &bull; ${dev.type.toUpperCase()}
+            </div>
+          </div>
+        </div>
+
+        <div class="device-meta-row" style="margin-top: 12px;">
+          ${dev.mac ? `<div class="device-meta-pill"><span>MAC</span> ${escapeHtml(dev.mac)}</div>` : ''}
+          ${dev.lanIp ? `<div class="device-meta-pill"><span>LAN</span> ${escapeHtml(dev.lanIp)}</div>` : ''}
+          ${dev.tailscaleIp ? `<div class="device-meta-pill"><span>Mesh</span> ${escapeHtml(dev.tailscaleIp)}</div>` : ''}
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end;">
+          ${!isMobileDevice(dev) ? `
+            <button class="btn-secondary" data-view-screen-target="${escapeHtml(dev.tailscaleIp || dev.lanIp || dev.id)}" type="button" style="padding: 6px 14px; font-size: 12px;">
+              ${getSvgIcon('desktop', 'icon-sm')}
+              <span>${t('btnViewScreen')}</span>
+            </button>
+          ` : ''}
+          ${!isOnline && dev.mac ? `
+            <button class="btn-primary" data-wake-id="${dev.id}" data-wake-mac="${dev.mac}" type="button" style="padding: 6px 14px; font-size: 12px;">
+              ${getSvgIcon('wake', 'icon-sm')}
+              <span>${t('btnWake')}</span>
+            </button>
+          ` : ''}
+          <button class="btn-secondary" data-open-id="${dev.id}" type="button" style="padding: 6px 14px; font-size: 12px;">
+            Open Controls
+          </button>
+        </div>
+      </div>
+    `;
+    })
+    .join('');
+
+  container.querySelectorAll('[data-open-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-open-id');
+      if (id) selectDevice(id);
+    });
+  });
+
+  container.querySelectorAll('[data-wake-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-wake-id');
+      const mac = btn.getAttribute('data-wake-mac');
+      if (id) wakeDevice(id, mac);
+    });
+  });
+
+  container.querySelectorAll('[data-view-screen-target]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = btn.getAttribute('data-view-screen-target');
+      if (target) window.location.href = `rustdesk://${target}`;
+    });
+  });
+}
+
+// ==========================================================================
+// Safe Confirm Modal & Edit Modal
+// ==========================================================================
+
+let confirmActionFn = null;
+
+export function openConfirmModal(title, prompt, onConfirm) {
+  const modal = document.getElementById('actionConfirmModal');
+  const titleEl = document.getElementById('confirmModalTitle');
+  const promptEl = document.getElementById('confirmModalPrompt');
+  if (!modal) return;
+
+  if (titleEl) titleEl.textContent = title;
+  if (promptEl) promptEl.textContent = prompt;
+  confirmActionFn = onConfirm;
+
+  modal.classList.add('active');
+}
+
+export function openEditModal(device) {
+  editingDeviceId = device.id;
+  const modal = document.getElementById('deviceEditModal');
+  if (!modal) return;
+
+  const nameInput = document.getElementById('editDevName');
+  const typeSelect = document.getElementById('editDevType');
+  const macInput = document.getElementById('editDevMac');
+  const lanInput = document.getElementById('editDevLanIp');
+  const tsInput = document.getElementById('editDevTsIp');
+
+  if (nameInput) nameInput.value = device.name || '';
+  if (typeSelect) typeSelect.value = (device.type || 'desktop').toLowerCase();
+  if (macInput) macInput.value = device.mac || '';
+  if (lanInput) lanInput.value = device.lanIp || '';
+  if (tsInput) tsInput.value = device.tailscaleIp || '';
+
+  modal.classList.add('active');
+}
+
+export function closeEditModal() {
+  editingDeviceId = null;
+  const modal = document.getElementById('deviceEditModal');
+  modal?.classList.remove('active');
+}
+
+// ==========================================================================
+// Mobile Sidebar Drawer Controls
+// ==========================================================================
+
+export function openMobileSidebar() {
+  const sidebar = document.getElementById('appSidebar');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  sidebar?.classList.add('open');
+  backdrop?.classList.add('active');
+}
+
+export function closeMobileSidebar() {
+  const sidebar = document.getElementById('appSidebar');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  sidebar?.classList.remove('open');
+  backdrop?.classList.remove('active');
+}
+
+// ==========================================================================
+// Screen Control & File Sync Controllers
+// ==========================================================================
+
+export async function refreshScreenSnapshot() {
+  try {
+    const res = await fetch('/api/screen/snapshot');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.status === 'ok' && data.image) {
+      const img = document.getElementById('screenSnapshotImg');
+      const placeholder = document.getElementById('screenSnapshotPlaceholder');
+      const modalImg = document.getElementById('screenModalImg');
+      if (img) {
+        img.src = data.image;
+        img.style.display = 'block';
+      }
+      if (placeholder) placeholder.style.display = 'none';
+      if (modalImg) modalImg.src = data.image;
+    }
+  } catch (err) {
+    console.debug('[Screen] Snapshot error:', err.message);
+  }
+}
+
+export function setupScreenControl() {
+  const btnRefresh = document.getElementById('btnRefreshScreenSnapshot');
+  const btnOpenModal = document.getElementById('btnOpenScreenModal');
+  const btnCloseModal = document.getElementById('btnCloseScreenModal');
+  const btnRefreshModal = document.getElementById('btnRefreshModalScreen');
+  const modal = document.getElementById('modalScreenViewer');
+  const modalImg = document.getElementById('screenModalImg');
+  const previewImg = document.getElementById('screenSnapshotImg');
+  const keyInput = document.getElementById('screenKeystrokeInput');
+  const btnSendKey = document.getElementById('btnSendKeystroke');
+
+  btnRefresh?.addEventListener('click', async () => {
+    await refreshScreenSnapshot();
+    showToast('Screen snapshot updated', 'check');
+  });
+
+  const openViewer = () => {
+    if (modal) modal.style.display = 'flex';
+    refreshScreenSnapshot();
+  };
+
+  btnOpenModal?.addEventListener('click', openViewer);
+  previewImg?.addEventListener('click', openViewer);
+
+  btnCloseModal?.addEventListener('click', () => {
+    if (modal) modal.style.display = 'none';
+  });
+
+  btnRefreshModal?.addEventListener('click', async () => {
+    await refreshScreenSnapshot();
+    showToast('Screen frame refreshed', 'check');
+  });
+
+  // Relay mouse clicks on interactive screen canvas
+  modalImg?.addEventListener('click', async (e) => {
+    const rect = modalImg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const relX = (e.clientX - rect.left) / rect.width;
+    const relY = (e.clientY - rect.top) / rect.height;
+    const targetX = Math.round(relX * 1920);
+    const targetY = Math.round(relY * 1080);
+
+    try {
+      await fetch('/api/screen/click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ x: targetX, y: targetY, button: 'left' }),
+      });
+      setTimeout(refreshScreenSnapshot, 250);
+    } catch (_) {}
+  });
+
+  const sendKeystrokes = async () => {
+    const val = keyInput?.value?.trim();
+    if (!val) return;
+    try {
+      await fetch('/api/screen/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: val }),
+      });
+      if (keyInput) keyInput.value = '';
+      showToast(`Sent: ${val}`, 'check');
+      setTimeout(refreshScreenSnapshot, 300);
+    } catch (_) {}
+  };
+
+  btnSendKey?.addEventListener('click', sendKeystrokes);
+  keyInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      sendKeystrokes();
+    }
+  });
+
+  document.querySelectorAll('.btn-chip-key').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const key = btn.getAttribute('data-key');
+      if (!key) return;
+      try {
+        await fetch('/api/screen/key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key }),
+        });
+        showToast(`Sent key: ${key}`, 'check');
+        setTimeout(refreshScreenSnapshot, 250);
+      } catch (_) {}
+    });
+  });
+}
+
+export async function refreshFileSync() {
+  const section = document.getElementById('fileSyncSection');
+  try {
+    const res = await fetch('/api/sync/folders');
+    if (!res.ok) {
+      if (section) section.style.display = 'none';
+      return;
+    }
+    const data = await res.json();
+    const listEl = document.getElementById('syncFoldersList');
+
+    if (data.status === 'ok' && Array.isArray(data.folders) && data.folders.length > 0) {
+      if (section) section.style.display = '';
+      if (listEl) {
+        listEl.innerHTML = data.folders
+          .map((f) => `
+            <div class="sync-folder-item" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--surface-hover); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);">
+              <div style="min-width: 0;">
+                <div style="font-size: 13px; font-weight: 600; color: var(--text-primary);">${escapeHtml(f.label)}</div>
+                <div style="font-size: 11px; color: var(--text-tertiary); font-family: monospace;">${escapeHtml(f.path)}</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 12px; font-weight: 600; color: var(--accent);">${f.progress}%</span>
+                <span class="telemetry-pill" style="font-size: 10.5px; text-transform: uppercase;">${escapeHtml(f.state)}</span>
+              </div>
+            </div>
+          `)
+          .join('');
+      }
+    } else {
+      if (section) section.style.display = 'none';
+    }
+  } catch (err) {
+    console.debug('[Sync] Folders fetch error:', err.message);
+    if (section) section.style.display = 'none';
+  }
+}
+
+export function setupFileSync() {
+  const btnSync = document.getElementById('btnSyncTrigger');
+  btnSync?.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/sync/trigger', { method: 'POST' });
+      if (res.ok) {
+        showToast('Syncthing cluster sync triggered', 'check');
+        await refreshFileSync();
+      }
+    } catch (err) {
+      showToast('Failed to trigger sync', 'error');
+    }
+  });
+}
+
+export function setupDeckEditModal() {
+  const modal = document.getElementById('modalEditTelemetryDeck');
+  const btnOpen = document.getElementById('btnEditTelemetryDeck');
+  const btnClose = document.getElementById('btnCloseEditDeckModal');
+  const btnCancel = document.getElementById('btnCancelEditDeck');
+  const btnSave = document.getElementById('btnSaveEditDeck');
+  const deckList = document.getElementById('deckEditList');
+
+  function openDeckModal() {
+    if (!modal || !deckList) return;
+    renderDeckEditItems();
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
+
+  function closeDeckModal() {
+    if (!modal) return;
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+
+  function renderDeckEditItems() {
+    if (!deckList) return;
+    deckList.innerHTML = '';
+
+    currentTelemetryDeckConfig.order.forEach((cardKey) => {
+      const isChecked = currentTelemetryDeckConfig.cards.includes(cardKey);
+      const label = DECK_CARD_LABELS[cardKey] || cardKey;
+      const row = document.createElement('div');
+      row.className = 'deck-item-row';
+      row.dataset.card = cardKey;
+      row.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 8px;';
+      row.innerHTML = `
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; font-weight: 500; font-size: 13.5px; color: var(--text-primary);">
+          <input type="checkbox" class="deck-item-check" data-card="${escapeHtml(cardKey)}" ${isChecked ? 'checked' : ''} style="width: 16px; height: 16px; accent-color: var(--color-primary, #38bdf8); cursor: pointer;" />
+          <span>${escapeHtml(label)}</span>
+        </label>
+        <div style="display: flex; gap: 6px;">
+          <button type="button" class="btn-subtle deck-btn-up" title="Move Up" style="padding: 4px 10px; font-size: 13px; line-height: 1;">▲</button>
+          <button type="button" class="btn-subtle deck-btn-down" title="Move Down" style="padding: 4px 10px; font-size: 13px; line-height: 1;">▼</button>
+        </div>
+      `;
+
+      row.querySelector('.deck-btn-up')?.addEventListener('click', () => {
+        const prev = row.previousElementSibling;
+        if (prev) deckList.insertBefore(row, prev);
+      });
+
+      row.querySelector('.deck-btn-down')?.addEventListener('click', () => {
+        const next = row.nextElementSibling;
+        if (next) deckList.insertBefore(next, row);
+      });
+
+      deckList.appendChild(row);
+    });
+  }
+
+  btnOpen?.addEventListener('click', openDeckModal);
+  btnClose?.addEventListener('click', closeDeckModal);
+  btnCancel?.addEventListener('click', closeDeckModal);
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeDeckModal();
+  });
+
+  btnSave?.addEventListener('click', async () => {
+    const rows = Array.from(deckList.querySelectorAll('.deck-item-row'));
+    const newOrder = rows.map((r) => r.dataset.card);
+    const enabledCards = rows
+      .filter((r) => r.querySelector('.deck-item-check')?.checked)
+      .map((r) => r.dataset.card);
+
+    currentTelemetryDeckConfig.cards = enabledCards;
+    currentTelemetryDeckConfig.order = newOrder;
+
+    applyTelemetryDeckConfig(currentTelemetryDeckConfig);
+
+    try {
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telemetryDeck: {
+            cards: enabledCards,
+            order: newOrder,
+          },
+        }),
+      });
+      showToast('Telemetry deck customized', 'check');
+    } catch (err) {
+      showToast('Failed to save deck settings', 'alert');
+    }
+
+    closeDeckModal();
+  });
+}
+
+// ==========================================================================
+// Initialization & Event Wiring
+// ==========================================================================
+
+export function initDevicesModule() {
+  // Static Nav Clicks
+  document.getElementById('navItemAllDevices')?.addEventListener('click', () => {
+    selectDevice('all');
+  });
+
+  document.getElementById('navItemAssistant')?.addEventListener('click', () => {
+    selectDevice('assistant');
+  });
+
+  // Mobile Drawer Toggle
+  document.getElementById('btnToggleSidebarMobile')?.addEventListener('click', openMobileSidebar);
+  document.getElementById('sidebarBackdrop')?.addEventListener('click', closeMobileSidebar);
+
+  // Power & Display Tiles
+  document.getElementById('tileLock')?.addEventListener('click', () => {
+    executeControlAction('lock');
+  });
+
+  document.getElementById('tileScreenOff')?.addEventListener('click', () => {
+    executeControlAction('screen_off');
+  });
+
+  document.getElementById('tileSleep')?.addEventListener('click', () => {
+    openConfirmModal(t('confirmSleepTitle'), t('confirmSleepPrompt'), () => {
+      executeControlAction('sleep');
+    });
+  });
+
+  document.getElementById('tileShutdown')?.addEventListener('click', () => {
+    openConfirmModal(t('confirmShutdownTitle'), t('confirmShutdownPrompt'), () => {
+      executeControlAction('shutdown');
+    });
+  });
+
+  // Running Apps Show All Toggle & Refresh
+  document.getElementById('btnToggleAllProcesses')?.addEventListener('click', () => {
+    showAllProcesses = !showAllProcesses;
+    renderRunningProcesses();
+  });
+
+  document.getElementById('btnRefreshProcesses')?.addEventListener('click', async () => {
+    await fetchRunningProcesses();
+    showToast('Running apps refreshed', 'check');
+  });
+
+  // App Manager Mode Toggle (Simple vs Advanced)
+  document.getElementById('btnAppModeSimple')?.addEventListener('click', () => {
+    setAppMode('simple');
+  });
+
+  document.getElementById('btnAppModeAdvanced')?.addEventListener('click', () => {
+    setAppMode('advanced');
+  });
+
+  // Local Telemetry Refresh Button
+  document.getElementById('btnRefreshLocalTelemetry')?.addEventListener('click', async () => {
+    await fetchLocalTelemetry();
+    showToast('Local telemetry refreshed', 'check');
+  });
+
+  // Edit Device Modal Actions
+  document.getElementById('btnEditDevCancel')?.addEventListener('click', closeEditModal);
+  document.getElementById('btnEditDevSave')?.addEventListener('click', () => {
+    if (!editingDeviceId) return;
+    const name = document.getElementById('editDevName')?.value?.trim();
+    const type = document.getElementById('editDevType')?.value?.trim();
+    const mac = document.getElementById('editDevMac')?.value?.trim();
+    const lanIp = document.getElementById('editDevLanIp')?.value?.trim();
+    const tailscaleIp = document.getElementById('editDevTsIp')?.value?.trim();
+
+    saveDeviceEdit(editingDeviceId, { name, type, mac, lanIp, tailscaleIp });
+  });
+
+  // Action Confirmation Modal Actions
+  document.getElementById('confirmModalCancel')?.addEventListener('click', () => {
+    document.getElementById('actionConfirmModal')?.classList.remove('active');
+    confirmActionFn = null;
+  });
+
+  document.getElementById('confirmModalOk')?.addEventListener('click', () => {
+    document.getElementById('actionConfirmModal')?.classList.remove('active');
+    if (confirmActionFn) {
+      confirmActionFn();
+      confirmActionFn = null;
+    }
+  });
+
+  // WoL Enable Button in Settings
+  document.getElementById('btnEnableWol')?.addEventListener('click', () => {
+    enableSystemWol();
+  });
+
+  // Mobile Companion Actions
+  // 1. Ping / Find Phone
+  document.getElementById('btnPingPhone')?.addEventListener('click', async () => {
+    const dev = getSelectedDevice();
+    if (!dev) return;
+    const ok = await sendMobileCommand(dev.id, 'ping');
+    if (ok) {
+      showToast(t('pingSent', { name: dev.name }) || `Ping sent to ${dev.name}`, 'bell');
+      addActivity(t('btnPingPhone') || 'Find Phone', t('pingSent', { name: dev.name }) || `Ping sent to ${dev.name}`, 'activity');
+    }
+  });
+
+  // 2. Keep Screen Awake Switch
+  document.getElementById('toggleMobileWakeLock')?.addEventListener('change', async (e) => {
+    const dev = getSelectedDevice();
+    if (!dev) return;
+    const enabled = e.target.checked;
+    const ok = await sendMobileCommand(dev.id, 'wake_lock', { enabled });
+    if (ok) {
+      showToast(enabled ? 'Screen awake enabled' : 'Screen awake disabled', 'sun');
+      addActivity(t('mobileScreenWake') || 'Screen Wake', enabled ? 'Always On' : 'Normal', 'sun');
+      if (dev.telemetry) dev.telemetry.wakeLock = enabled;
+      renderMobileCompanionDeck(dev);
+    } else {
+      e.target.checked = !enabled;
+    }
+  });
+
+  // 3. Open URL on Phone
+  document.getElementById('formPhoneUrl')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const dev = getSelectedDevice();
+    if (!dev) return;
+    const input = document.getElementById('phoneUrlInput');
+    const url = input?.value?.trim();
+    if (!url) return;
+
+    const ok = await sendMobileCommand(dev.id, 'open_url', { url });
+    if (ok) {
+      showToast(t('urlSent', { name: dev.name }) || `URL sent to ${dev.name}`, 'link');
+      addActivity(t('btnOpenOnPhone') || 'Open URL', url, 'link');
+      if (input) input.value = '';
+    }
+  });
+
+  // 4. Push Clipboard to Phone
+  document.getElementById('formPhoneClip')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const dev = getSelectedDevice();
+    if (!dev) return;
+    const input = document.getElementById('phoneClipInput');
+    const text = input?.value?.trim();
+    if (!text) return;
+
+    const ok = await sendMobileCommand(dev.id, 'clipboard', { text });
+    if (ok) {
+      showToast(t('clipSent', { name: dev.name }) || `Clipboard sent to ${dev.name}`, 'clipboard');
+      addActivity(t('btnPushClip') || 'Push Text', text.slice(0, 32), 'clipboard');
+      if (input) input.value = '';
+    }
+  });
+
+  // 5. Apple Shortcuts Triggers
+  document.querySelectorAll('.shortcut-tile').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const shortcutName = btn.getAttribute('data-shortcut');
+      if (!shortcutName) return;
+      const dev = getSelectedDevice();
+      const shortcutUrl = `shortcuts://run-shortcut?name=${encodeURIComponent(shortcutName)}`;
+      const isMobileClient = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
+
+      if (isMobileClient) {
+        window.location.href = shortcutUrl;
+      } else if (dev && isMobileDevice(dev)) {
+        await sendMobileCommand(dev.id, 'open_url', { url: shortcutUrl });
+        showToast(`Shortcut '${shortcutName}' sent to ${dev.name}`, 'activity');
+      } else {
+        window.location.href = shortcutUrl;
+      }
+    });
+  });
+
+  // 6. Setup Guide Accordion Toggle
+  document.getElementById('btnToggleShortcutsGuide')?.addEventListener('click', () => {
+    const body = document.getElementById('shortcutsGuideBody');
+    const chevron = document.getElementById('shortcutsGuideChevron');
+    if (!body) return;
+    const isHidden = body.style.display === 'none';
+    body.style.display = isHidden ? 'block' : 'none';
+    chevron?.classList.toggle('open', isHidden);
+  });
+
+  // 7. Refresh Telemetry Button
+  document.getElementById('btnRefreshMobileTelemetry')?.addEventListener('click', async () => {
+    await fetchDevices();
+    showToast('Telemetry refreshed', 'check');
+  });
+
+  // 8. 1-Tap Web Push Notifications Activation
+  const enableWebPushNotifications = async () => {
+    try {
+      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+
+      // iOS Safari non-standalone restriction prompt
+      if (isIos && !isStandalone) {
+        showToast("To enable push notifications on iPhone: Tap Share (square with arrow) ➔ 'Add to Home Screen' first, then open AION from your home screen.", 'alert');
+        return;
+      }
+
+      if (!('Notification' in window)) {
+        if (isIos) {
+          showToast("To enable notifications on iOS: Tap Share ➔ 'Add to Home Screen' first.", 'alert');
+        } else {
+          showToast('Notifications are not supported in this browser.', 'alert');
+        }
+        return;
+      }
+
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showToast('PushManager is not supported in this browser.', 'alert');
+        return;
+      }
+
+      if (Notification.permission === 'denied') {
+        showToast('Notification permission is blocked in browser settings. Please enable notifications.', 'alert');
+        return;
+      }
+
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        showToast('Notification permission was not granted.', 'alert');
+        return;
+      }
+
+      const reg = await navigator.serviceWorker.ready;
+      const keyRes = await fetch('/api/push/vapid-public-key');
+      const keyData = await keyRes.json();
+      if (!keyData.publicKey) {
+        showToast('Failed to retrieve VAPID key', 'alert');
+        return;
+      }
+
+      const appKey = urlBase64ToUint8Array(keyData.publicKey);
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appKey,
+      });
+
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: sub, deviceId: selectedDeviceId || 'local' }),
+      });
+
+      showToast('Web Push successfully enabled!', 'activity');
+    } catch (err) {
+      showToast(`Push activation error: ${err.message}`, 'alert');
+    }
+  };
+
+  document.getElementById('btnEnablePushNotify')?.addEventListener('click', enableWebPushNotifications);
+  document.getElementById('btnEnablePushNotifications')?.addEventListener('click', enableWebPushNotifications);
+
+  // 9. Get 'AION Runner' Shortcut
+  document.getElementById('btnGetRunnerShortcut')?.addEventListener('click', async () => {
+    try {
+      let hostIp = window.location.hostname;
+      try {
+        const pairUrl = await getPairingHostUrl();
+        const parsed = new URL(pairUrl);
+        if (parsed.hostname && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+          hostIp = parsed.hostname;
+        }
+      } catch {}
+      const runnerUrl = `http://${hostIp}:5050/api/runner`;
+
+      try {
+        await navigator.clipboard.writeText(runnerUrl);
+        showToast(`Runner URL copied: ${runnerUrl}`, 'check');
+      } catch {}
+
+      const shortcutUrl = 'shortcuts://run-shortcut?name=AION%20Runner';
+      setTimeout(() => {
+        window.location.href = shortcutUrl;
+      }, 400);
+    } catch {
+      window.location.href = 'shortcuts://import-shortcut?name=AION%20Runner';
+    }
+  });
+
+  // Subscribe to activity updates and devMode so recent activity and app mode re-render
+  subscribe((state, key) => {
+    if (key === 'activityFeed') {
+      renderCompactActivity();
+    }
+    if (key === 'devMode') {
+      setAppMode(state.devMode ? 'advanced' : 'simple');
+    }
+  });
+
+  // Initial Capabilities & Telemetry Startup
+  fetchCapabilities();
+  setupDeckEditModal();
+  loadTelemetryDeckConfig();
+  startLocalTelemetryPolling();
+
+  // Screen Control & File Sync Wiring
+  setupScreenControl();
+  setupFileSync();
+  refreshScreenSnapshot();
+  refreshFileSync();
+
+  // Initial Fetches
+  fetchDevices();
+  fetchWolStatus();
+  fetchRunningProcesses();
+
+  // Periodic silent refresh of processes
+  setInterval(() => {
+    fetchRunningProcesses();
+  }, 12000);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function capitalize(s) {
+  if (!s) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+export { renderAll as renderDevicesView };

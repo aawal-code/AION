@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Local agent & skills configuration
+.agents/
+
+# Logs and runtime traces
+*.log
+*.log.*
+
+# Environment variables & local secrets
+.env
+.env.*
+*.env
+*.local
+
+# Temporary, backup, and fallback scripts
+lock.bat
+lock.vbs
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# OS-specific files
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+
+# Build outputs & installers
+dist/
+build-cache/
+*.exe
+
+# Local runtime state. Application services create required directories/files.
+# Keep reusable, sanitized examples under data/examples/ only.
+data/*
+!data/.gitkeep
+!data/examples/
+!data/examples/**
+*.sqlite*
+*.enc
+*.session
+*.key
+*.pem
+*.p12
+
+# Local analysis metadata; not part of the application source baseline.
+AUDIT_REPORT.md
+skills-lock.json
