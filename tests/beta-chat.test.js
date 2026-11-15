@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -79,6 +81,45 @@ test('Master spec §2/§5/§6: authenticated chat persists project-bound convers
   const reader = response.body.getReader(); let partial = ''; while (!partial.includes('event: delta')) { const next = await reader.read(); partial += new TextDecoder().decode(next.value); }
   cancel.abort(); await new Promise((resolve) => setTimeout(resolve, 100));
   response = await fetch(origin + `/api/assistant/sessions/${first.sessionId}/messages`, { headers: { cookie: jar } }); assert.equal((await response.json()).messages.at(-1).content, 'cancel this stream');
+  // Master spec §2/§6: exact scope, Owner approval, single-use bounded action.
+  response = await post('/api/assistant/chat/stream', { ...chat, mode: 'plan', sessionId: first.sessionId, prompt: 'Plan a text integrity check' }, h); assert.match(await response.text(), /event: done/);
+  const proposal = { projectId: project.id, sessionId: first.sessionId, title: 'Hash test text', action: 'hash_text', input: 'harmless input', targetHost: 'local', folders: [], permissions: ['compute:sha256'], maxInputBytes: 64, maxDurationMs: 1000, expiresInMinutes: 10 };
+  response = await post('/api/assistant/tasks', { ...proposal, folders: ['../escape'] }, h); assert.equal(response.status, 400);
+  response = await post('/api/assistant/tasks', { ...proposal, command: 'whoami' }, h); assert.equal(response.status, 400);
+  response = await post('/api/assistant/tasks', proposal, h); assert.equal(response.status, 201); const task = (await response.json()).task;
+  response = await post(`/api/assistant/tasks/${task.id}/run`, {}, h); assert.equal(response.status, 409);
+  response = await post(`/api/assistant/tasks/${task.id}/approve`, {}, { cookie: jar, origin, 'content-type': 'application/json' }); assert.equal(response.status, 403);
+  const trustedKey = crypto.generateKeyPairSync('ed25519');
+  const { createDevice } = await import('../src/services/identity-store.js'); const trusted = await createDevice({ name: 'Limited task user', role: 'trusted', publicKey: trustedKey.publicKey.export({ type: 'spki', format: 'pem' }), capabilities: ['conversation:write'] }, { role: 'owner', deviceId: owner.deviceId });
+  const challenge2 = await (await post('/api/auth/challenge', { deviceId: trusted.id }, { origin, 'content-type': 'application/json' })).json();
+  const sign2 = crypto.sign(null, Buffer.from(challenge2.signingPayload), trustedKey.privateKey).toString('base64url');
+  const auth2 = await post('/api/auth/authenticate', { challengeId: challenge2.challengeId, signature: sign2 }, { origin, 'content-type': 'application/json' });
+  const jar2 = cookies(auth2), csrf2 = /aion_csrf=([^;]+)/.exec(jar2)[1]; response = await post(`/api/assistant/tasks/${task.id}/approve`, {}, headers(jar2, csrf2)); assert.equal(response.status, 403);
+  response = await post(`/api/assistant/tasks/${task.id}/approve`, {}, h); assert.equal(response.status, 200);
+  response = await post(`/api/assistant/tasks/${task.id}/run`, { input: 'changed' }, h); assert.equal(response.status, 409);
+  response = await post(`/api/assistant/tasks/${task.id}/run`, {}, h); assert.equal(response.status, 200);
+  let completed; for (let i = 0; i < 100; i++) { response = await fetch(origin + `/api/assistant/tasks/${task.id}`, { headers: { cookie: jar } }); completed = await response.json(); if (completed.task.status === 'completed') break; await new Promise((resolve) => setTimeout(resolve, 10)); }
+  assert.equal(completed.task.status, 'completed'); assert.equal(completed.task.result.sha256, crypto.createHash('sha256').update(proposal.input).digest('hex'));
+  assert.deepEqual(completed.history.map((entry) => entry.event), ['proposed', 'approved', 'started', 'completed']);
+  response = await post(`/api/assistant/tasks/${task.id}/run`, {}, h); assert.equal(response.status, 409);
+  response = await post('/api/assistant/tasks', proposal, h); const cancelledTask = (await response.json()).task;
+  response = await post(`/api/assistant/tasks/${cancelledTask.id}/cancel`, {}, h); assert.equal(response.status, 200);
+  response = await post(`/api/assistant/tasks/${cancelledTask.id}/approve`, {}, h); assert.equal(response.status, 409);
+  const { createBoundedTask, approveBoundedTask, startBoundedTask, cancelBoundedTask, getBoundedTask } = await import('../src/services/bounded-tasks.js');
+  const actor = { role: 'owner', deviceId: owner.deviceId }; const running = await createBoundedTask({ ...proposal, input: 'x'.repeat(65536), maxInputBytes: 65536 }, actor);
+  await approveBoundedTask(running.id, actor); await startBoundedTask(running.id, actor); await cancelBoundedTask(running.id, actor); await new Promise((resolve) => setTimeout(resolve, 20)); assert.equal((await getBoundedTask(running.id)).status, 'cancelled');
+  response = await post('/api/assistant/tasks', proposal, h); const expired = (await response.json()).task;
+  const { getDb } = await import('../src/services/assistant-db.js'); (await getDb()).prepare('UPDATE bounded_tasks SET expires_at=? WHERE id=?').run('2000-01-01T00:00:00.000Z', expired.id);
+  response = await post(`/api/assistant/tasks/${expired.id}/approve`, {}, h); assert.equal(response.status, 409);
+  response = await post('/api/assistant/tasks', proposal, h); const expiredApproved = (await response.json()).task;
+  await post(`/api/assistant/tasks/${expiredApproved.id}/approve`, {}, h); (await getDb()).prepare('UPDATE bounded_tasks SET expires_at=? WHERE id=?').run('2000-01-01T00:00:00.000Z', expiredApproved.id);
+  response = await post(`/api/assistant/tasks/${expiredApproved.id}/run`, {}, h); assert.equal(response.status, 409);
+  response = await post('/api/assistant/tasks', proposal, h); const restarted = (await response.json()).task;
+  (await getDb()).prepare("UPDATE bounded_tasks SET status='running' WHERE id=?").run(restarted.id); closeDb();
+  const moduleUrl = new URL('../src/services/bounded-tasks.js', import.meta.url).href;
+  const script = `const m = await import(${JSON.stringify(moduleUrl)}); console.log(JSON.stringify([await m.getBoundedTask(${JSON.stringify(restarted.id)}), await m.getBoundedTask(${JSON.stringify(task.id)})]));`;
+  const child = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env, AION_ASSISTANT_DB_PATH: path.join(root, 'assistant.sqlite') }, windowsHide: true });
+  const recovered = JSON.parse(child.stdout.trim()); assert.equal(recovered[0].status, 'interrupted'); assert.equal(recovered[1].status, 'completed'); assert.equal(recovered[1].result.sha256, crypto.createHash('sha256').update(proposal.input).digest('hex'));
   process.env.ANTHROPIC_API_KEY = 'synthetic-only'; const { streamPrompt } = await import('../src/services/llm-provider.js'); let observed = '';
   globalThis.fetch = async () => new Response('event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Claude reply"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n');
   const result = await streamPrompt({ prompt: 'test', mode: 'plan', provider: 'anthropic', history: [], signal: new AbortController().signal, onText: async (part) => { observed += part; } }); assert.equal(result.content, 'Claude reply'); assert.equal(observed, 'Claude reply');

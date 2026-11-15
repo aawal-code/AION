@@ -4277,3 +4277,6 @@ html[dir="rtl"] .apple-switch input:checked + .apple-switch-slider::before {
 
 .assistant-projects-sidebar { overflow-y: auto; min-height: 0; }
 .assistant-project-manage { flex-shrink: 0; }
+.task-entry { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
+.task-entry p { margin: 6px 0; }
+.task-input-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 140px; overflow-y: auto; }

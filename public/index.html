@@ -1040,6 +1040,18 @@
                 <p>Folders stay in place. Linking does not enable file access or sync.</p>
                 <ul id="projectFolders"></ul><p id="projectManageError" role="alert" hidden></p>
               </details>
+              <details class="assistant-project-manage" id="taskPanel">
+                <summary>Tasks and approvals</summary>
+                <p>Propose a bounded text hash. File access and commands are unavailable.</p>
+                <form id="taskProposalForm" class="assistant-project-form">
+                  <label for="taskTitle">Task name</label><input id="taskTitle" class="modal-input" maxlength="160" required>
+                  <label for="taskInput">Exact text to hash</label><textarea id="taskInput" class="modal-input" rows="3" maxlength="64000" required></textarea>
+                  <label for="taskHost">Execution host</label><select id="taskHost" class="modal-input" required><option value="">Choose a host</option><option value="local">This host</option></select>
+                  <p>Folders: none · Permission: compute SHA-256 · Limit: 64 KiB, 1 second · Approval expires in 10 minutes.</p>
+                  <button class="btn-secondary" type="submit">Propose task</button>
+                </form>
+                <div id="taskList" aria-live="polite"></div><p id="taskError" role="alert" hidden></p>
+              </details>
               <!-- Project Chats / Threads Rail -->
               <div class="assistant-threads-header" style="margin-top: 16px;">
                 <span class="assistant-projects-title">Chats</span>

@@ -14,6 +14,7 @@ import {
 } from '../services/assistant-db.js';
 import { routePrompt, streamPrompt } from '../services/llm-provider.js';
 import { once } from 'node:events';
+import { createBoundedTask, listBoundedTasks, getBoundedTask, getTaskHistory, approveBoundedTask, cancelBoundedTask, startBoundedTask } from '../services/bounded-tasks.js';
 import { saveApiKey, deleteApiKey, getVaultStatus } from '../services/vault.js';
 import { loadConfig } from '../services/config.js';
 import { logEvent } from '../services/sse.js';
@@ -62,6 +63,23 @@ const streamingSessions = new Set();
  */
 export async function handleAssistantRoutes(req, res, urlPath) {
   const method = req.method;
+
+  // Tasks support only a fixed, in-process text hash operation. No shell or file access.
+  if (urlPath === '/api/assistant/tasks' && method === 'POST') {
+    try { const task = await createBoundedTask(await readJsonBody(req, 96 * 1024), req.aionAuth); return sendJson(res, 201, { status: 'ok', task }); }
+    catch (error) { return sendJson(res, 400, { status: 'error', error: error.message }); }
+  }
+  const taskProject = urlPath.match(/^\/api\/assistant\/projects\/([^/]+)\/tasks$/);
+  if (taskProject && method === 'GET') return sendJson(res, 200, { status: 'ok', tasks: await listBoundedTasks(decodeURIComponent(taskProject[1])) });
+  const taskMatch = urlPath.match(/^\/api\/assistant\/tasks\/([a-f0-9-]+)(?:\/(approve|cancel|run))?$/);
+  if (taskMatch && method === 'GET' && !taskMatch[2]) {
+    const task = await getBoundedTask(taskMatch[1]); return task ? sendJson(res, 200, { status: 'ok', task, history: await getTaskHistory(task.id) }) : sendJson(res, 404, { status: 'error', error: 'Task not found' });
+  }
+  if (taskMatch && method === 'POST' && taskMatch[2]) {
+    if (req.aionAuth?.role !== 'owner') return sendJson(res, 403, { status: 'error', error: 'Owner authorization is required' });
+    try { const body = await readJsonBody(req, 1024); if (Object.keys(body).length) throw new Error('Task scope cannot be changed'); const fn = { approve: approveBoundedTask, cancel: cancelBoundedTask, run: startBoundedTask }[taskMatch[2]]; return sendJson(res, 200, { status: 'ok', task: await fn(taskMatch[1], req.aionAuth) }); }
+    catch (error) { return sendJson(res, 409, { status: 'error', error: error.message }); }
+  }
 
   // 1. Projects
   // GET /api/assistant/projects
@@ -184,7 +202,7 @@ export async function handleAssistantRoutes(req, res, urlPath) {
     if (activeStreams >= MAX_ACTIVE_STREAMS) return sendJson(res, 429, { status: 'error', error: 'Too many active chats' });
     let body; try { body = await readJsonBody(req, 64 * 1024); } catch (error) { return sendJson(res, error.statusCode || 400, { status: 'error', error: error.message }); }
     const { prompt, mode = 'ask', projectId = 'aion', sessionId: requestedSession, provider, model, runtimeMode } = body;
-    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 32000 || !['ask', 'plan'].includes(mode) || runtimeMode !== 'api') return sendJson(res, 400, { status: 'error', error: 'A valid Ask or Plan request and API provider are required' });
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 32000 || !['ask', 'plan'].includes(mode) || runtimeMode !== 'api' || typeof provider !== 'string' || !provider || (model != null && (typeof model !== 'string' || model.length > 160)) || typeof projectId !== 'string') return sendJson(res, 400, { status: 'error', error: 'A valid Ask or Plan request and API provider are required' });
     const project = await getProject(projectId); if (!project) return sendJson(res, 404, { status: 'error', error: 'Project not found' });
     if (project.archived_at) return sendJson(res, 409, { status: 'error', error: 'Restore this project before starting a conversation' });
     let sessionId = requestedSession;

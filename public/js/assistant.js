@@ -7,6 +7,7 @@ import { t } from './i18n.js';
 import { getSvgIcon } from './icons.js';
 import { showToast } from './app.js';
 import { renderMarkdown } from './markdown.js';
+import { initTaskPanel, refreshTaskPanel } from './tasks.js';
 
 // All mutating requests use the same-origin session's CSRF token.
 function assistantFetch(url, options = {}) {
@@ -46,6 +47,7 @@ export async function initAssistantWorkspace() {
   setupModeToggle();
   setupNewProjectButton();
   setupProjectManagement();
+  initTaskPanel({ request: assistantFetch, getContext: () => ({ projectId: activeProjectId, sessionId: activeSessionId }) });
   setupNewChatButton();
   setupFullscreenChat();
   setupSpeechRecognition();
@@ -211,6 +213,7 @@ export async function selectProject(projectId) {
   updateProjectHeader();
   await loadProjectMessages(projectId);
   await refreshProjectManagement();
+  await refreshTaskPanel();
 }
 
 /**
