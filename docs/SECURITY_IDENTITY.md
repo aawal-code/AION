@@ -30,4 +30,4 @@ Before an installed-data migration, copy `security.sqlite` and legacy `trusted-d
 
 ## Current limits
 
-Windows DPAPI-backed storage is not yet used because this phase persists no recoverable secret material; API-vault migration remains separate work. Session renewal, device UI, owner approval screens, and encrypted remote transport are also future work. A local user who can extract another user's browser cookie remains outside the protections of this prototype and requires OS-account/IPC hardening.
+Windows API credentials are protected with DPAPI CurrentUser in `src/services/vault.js`. Synthetic tests cover legacy-vault backup, migration, restart readback, and corrupted legacy data failing closed; they do not validate an installed-data migration, a different Windows-user context, interrupted migration, or WebView2-profile loss. Session renewal, Owner-approved QR/matching-code pairing, encrypted remote transport, and high-impact approval workflows remain future work. A local user who can extract another user's browser cookie remains outside the protections of this prototype and requires OS-account/IPC hardening.

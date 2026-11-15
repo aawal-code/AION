@@ -33,6 +33,8 @@ For normal local desktop use, use the native shell after a clean Windows build. 
 
 - [Phase 1 report](AION_PHASE_1_REPORT.md)
 - [Phase 2A report](AION_PHASE_2A_REPORT.md)
+- [Product and engineering master specification](docs/AION_MASTER_SPEC.md)
+- [Requirements traceability matrix](docs/REQUIREMENTS_TRACEABILITY.md)
 - [Identity and authorization boundary](docs/SECURITY_IDENTITY.md)
 - [Documentation asset manifest](docs/assets/ASSET_MANIFEST.md)
 
