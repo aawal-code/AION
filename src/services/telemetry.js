@@ -20,6 +20,8 @@ let currentBatteryState = {
   batteryStatus: 2,
 };
 let laptopModeInterval = null;
+const RESOURCE_POLICIES = Object.freeze({ eco: 60000, balanced: 30000, performance: 15000 });
+let resourcePolicy = 'balanced';
 
 function loadLaptopModeFile() {
   try {
@@ -84,7 +86,7 @@ export function checkEthernetConnected() {
  */
 export function getBatteryTelemetry() {
   return new Promise((resolve) => {
-    if (process.platform !== 'win32') {
+    if (process.platform !== 'win32' || process.env.AION_TEST_MODE) {
       return resolve({
         hasBattery: false,
         percent: 100,
@@ -236,6 +238,19 @@ export function startLaptopModePolling(intervalMs = 15000) {
     pollLaptopMode().catch(() => {});
   }, intervalMs);
   if (laptopModeInterval.unref) laptopModeInterval.unref();
+}
+
+export function setResourcePolicy(mode) {
+  if (!Object.prototype.hasOwnProperty.call(RESOURCE_POLICIES, mode)) throw new Error('Resource policy must be eco, balanced, or performance');
+  resourcePolicy = mode;
+  // This is the host's only recurring hardware probe. Security/session work is
+  // event-driven and unchanged by policy. The timer remains unref'd.
+  startLaptopModePolling(RESOURCE_POLICIES[mode]);
+  return getResourcePolicy();
+}
+
+export function getResourcePolicy() {
+  return { mode: resourcePolicy, laptopModePollIntervalMs: RESOURCE_POLICIES[resourcePolicy], backgroundPolicy: 'event-driven identity and on-demand telemetry' };
 }
 
 export function stopLaptopModePolling() {

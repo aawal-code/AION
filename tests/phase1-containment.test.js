@@ -44,6 +44,6 @@ test('Phase 1 containment rejects unauthenticated and arbitrary execution routes
     const result = await runNode(code, sandbox);
     assert.match(result.stdout, /AION CORE ONLINE/);
   } finally {
-    await rm(sandbox, { recursive: true, force: true });
+    await rm(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });

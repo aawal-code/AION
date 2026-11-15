@@ -1235,6 +1235,12 @@
             </svg>
             <span>API Vault &amp; Execution</span>
           </button>
+          <button class="settings-tab-btn" data-settings-tab="security" type="button">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path>
+            </svg>
+            <span>Security</span>
+          </button>
           <button class="settings-tab-btn" data-settings-tab="interface" type="button">
             <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="5"></circle>
@@ -1448,7 +1454,64 @@
       </div>
 
       <!-- TAB 4: Interface -->
+      <div class="settings-tab-panel" id="settingsPanel-security">
+        <div class="settings-group">
+          <div class="settings-group-title">Identity &amp; access</div>
+          <p id="securityStatus" class="security-note">Checking the protected identity store…</p>
+          <div id="securityEnrollment" class="security-action" hidden>
+            <label class="form-label" for="securityOwnerName">Owner device name</label>
+            <input class="modal-input" id="securityOwnerName" maxlength="120" autocomplete="off" placeholder="This AION desktop">
+            <button class="btn-primary" id="btnSecurityEnroll" type="button">Create Owner identity</button>
+          </div>
+          <div id="securityRecovery" class="security-action" hidden>
+            <label class="form-label" for="securityRecoveryKey">Recovery key</label>
+            <input class="modal-input" id="securityRecoveryKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the recovery key">
+            <label class="form-label" for="securityRecoveryName">Replacement device name</label>
+            <input class="modal-input" id="securityRecoveryName" maxlength="120" autocomplete="off" placeholder="Recovered AION desktop">
+            <button class="btn-secondary" id="btnSecurityRecover" type="button">Recover Owner access</button>
+          </div>
+          <div id="securityOneTimeKey" class="security-one-time" hidden>
+            <strong>Save this recovery key now.</strong>
+            <p>It will not be shown again. It restores ownership, not project data.</p>
+            <code id="securityRecoveryKeyValue"></code>
+            <button class="btn-secondary" id="btnSecurityCopyRecovery" type="button">Copy once</button>
+            <label><input id="securityRecoveryConfirmed" type="checkbox"> I saved this key in a protected location.</label>
+            <button class="btn-primary" id="btnSecurityDismissRecovery" type="button" disabled>Continue</button>
+          </div>
+        </div>
+        <div class="settings-group" id="securityOwnerActions" hidden>
+          <div class="settings-group-title">Recovery key</div>
+          <p class="security-note">Rotate after a suspected exposure. The previous recovery key is invalidated immediately.</p>
+          <button class="btn-secondary" id="btnSecurityRotateRecovery" type="button">Rotate recovery key</button>
+        </div>
+        <div class="settings-group" id="securityDeviceEnrollment" hidden>
+          <div class="settings-group-title">Enroll a device</div>
+          <p class="security-note">Paste an Ed25519 public key from the device being approved. Network location never grants access.</p>
+          <label class="form-label" for="securityDeviceName">Device name</label>
+          <input class="modal-input" id="securityDeviceName" maxlength="120" autocomplete="off" placeholder="Approved device">
+          <label class="form-label" for="securityDeviceRole">Permission</label>
+          <select class="form-select" id="securityDeviceRole"><option value="limited">Limited — device status only</option><option value="trusted">Trusted — read status and use conversations</option></select>
+          <label class="form-label" for="securityDeviceKey">Ed25519 public key</label>
+          <textarea class="modal-input security-key-input" id="securityDeviceKey" rows="4" spellcheck="false" placeholder="-----BEGIN PUBLIC KEY-----"></textarea>
+          <button class="btn-primary" id="btnSecurityEnrollDevice" type="button">Approve device</button>
+        </div>
+        <div class="settings-group" id="securityDevicesGroup" hidden><div class="settings-group-title">Approved devices</div><div id="securityDevicesList" class="security-list"></div></div>
+        <div class="settings-group" id="securitySessionsGroup" hidden><div class="settings-group-title">Active sessions</div><div id="securitySessionsList" class="security-list"></div></div>
+        <div class="settings-group" id="securityAuditGroup" hidden><div class="settings-group-title">Security activity</div><div id="securityAuditList" class="security-list"></div></div>
+      </div>
+
+      <!-- TAB 4: Interface -->
       <div class="settings-tab-panel" id="settingsPanel-interface">
+        <div class="settings-group">
+          <div class="settings-group-title">Resource policy</div>
+          <p class="security-note">Controls the host’s only recurring hardware probe. Identity, authorization, vault writes, and database transactions remain event-driven in every mode.</p>
+          <div class="lang-segmented" aria-label="Resource policy">
+            <button class="lang-btn resource-policy-btn" data-resource-policy="eco" type="button">Eco</button>
+            <button class="lang-btn resource-policy-btn active" data-resource-policy="balanced" type="button">Balanced</button>
+            <button class="lang-btn resource-policy-btn" data-resource-policy="performance" type="button">Performance</button>
+          </div>
+          <p id="resourcePolicyEffect" class="security-note" style="margin-top: 8px;"></p>
+        </div>
         
         <!-- Theme Mode: Light / Dark / Auto -->
         <div class="settings-group">

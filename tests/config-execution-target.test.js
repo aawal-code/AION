@@ -106,16 +106,12 @@ describe('Unified Config & Execution Target Suite', () => {
   });
 
   describe('HTTP REST Endpoints (/api/config)', () => {
-    test('GET /api/config returns 200 with config payload', async () => {
+    test('GET /api/config rejects an anonymous caller', async () => {
       const res = await fetch(`${baseUrl}/api/config`);
-      assert.equal(res.status, 200);
-      const data = await res.json();
-      assert.equal(data.status, 'ok');
-      assert.ok(data.config);
-      assert.ok(data.config.executionTarget);
+      assert.equal(res.status, 401);
     });
 
-    test('POST /api/config updates configuration cleanly', async () => {
+    test('POST /api/config rejects an anonymous state change', async () => {
       const res = await fetch(`${baseUrl}/api/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -127,14 +123,10 @@ describe('Unified Config & Execution Target Suite', () => {
         }),
       });
 
-      assert.equal(res.status, 200);
-      const data = await res.json();
-      assert.equal(data.status, 'ok');
-      assert.equal(data.config.executionTarget.runtimeMode, 'cli');
-      assert.equal(data.config.executionTarget.cliProfile, 'claude');
+      assert.equal(res.status, 403);
     });
 
-    test('POST /api/assistant/chat processes prompt with execution target context', async () => {
+    test('POST /api/assistant/chat rejects an anonymous caller', async () => {
       // Clear mock key so it uses intelligent zero-network local response generator
       deleteApiKey('cerebras');
 
@@ -149,11 +141,7 @@ describe('Unified Config & Execution Target Suite', () => {
         }),
       });
 
-      assert.equal(res.status, 200);
-      const data = await res.json();
-      assert.equal(data.status, 'ok');
-      assert.ok(data.assistantMessage);
-      assert.ok(data.response);
+      assert.equal(res.status, 403);
     });
   });
 });

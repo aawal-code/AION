@@ -288,10 +288,11 @@ export function extractToken(req) {
     }
   }
 
-  // 2. Cookie header: aion_token=<token>
+  // 2. HttpOnly signed-session cookie. The retired aion_token cookie is never
+  // accepted so legacy PIN credentials cannot regain access after upgrade.
   const cookieHeader = req.headers?.cookie;
   if (cookieHeader && typeof cookieHeader === 'string') {
-    const match = cookieHeader.match(/(?:^|;\s*)aion_token=([^;]+)/);
+    const match = cookieHeader.match(/(?:^|;\s*)aion_session=([^;]+)/);
     if (match) {
       return decodeURIComponent(match[1].trim());
     }
@@ -326,7 +327,9 @@ function isLocalSessionToken(token) {
 }
 
 export function isDesktopSession(req) {
-  return isLocalSessionToken(extractToken(req));
+  // Desktop bootstrap is intentionally not an Owner credential. Route-level
+  // authorization resolves only signed identity sessions from security.sqlite.
+  return false;
 }
 
 /**
@@ -420,8 +423,9 @@ export function validateToken(token) {
  * Loopback network location is intentionally not an authorization grant.
  */
 export function isAuthenticated(req) {
-  const token = extractToken(req);
-  return isLocalSessionToken(token) || validateToken(token);
+  // Kept for compatibility with legacy route modules. Protected routes must
+  // use the asynchronous identity-store authorization guard instead.
+  return false;
 }
 
 /**

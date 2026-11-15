@@ -1,308 +1,90 @@
+import crypto from 'node:crypto';
+import { extractToken, isLocalhost, verifyLocalAuthSecret } from '../services/auth.js';
 import {
-  isAuthenticated,
-  extractToken,
-  isDesktopSession,
-  isLocalhost,
-  verifyLocalAuthSecret,
-  getSocketRemoteAddress,
-  checkPairRateLimit,
-  recordFailedPairAttempt,
-  resetPairRateLimit,
-  getRollingPinInfo,
-  getPairingPin,
-  regeneratePairingPin,
-  pairDevice,
-  getTrustedDevices,
-  revokeDevice,
-} from '../services/auth.js';
-import { removeDeviceFromRegistry } from '../services/devices.js';
-import { logEvent } from '../services/sse.js';
-import { enrollInitialOwner, createDevice, createChallenge, authenticateChallenge, recoverOwner, listDevices, revokeDevice as revokeIdentityDevice, authorize } from '../services/identity-store.js';
+  authenticateChallenge, authorize, createChallenge, createDevice, enrollInitialOwner,
+  getDesktopBootstrapContext, getIdentityStatus, issueDesktopBootstrap, listAuditEvents,
+  listDevices, listSessions, recoverOwner, revokeDevice, revokeSession, rotateRecoveryKey,
+} from '../services/identity-store.js';
 
-/**
- * Utility to read and parse JSON body with payload size guard
- */
-export function readJsonBody(req, maxSize = 1024 * 1024) {
+export function readJsonBody(req, maxSize = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('error', (err) => reject(new Error(`Request stream error: ${err.message}`)));
-    req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > maxSize) {
-        req.destroy();
-        const err = new Error('Payload too large');
-        err.statusCode = 413;
-        reject(err);
-      }
-    });
-    req.on('end', () => {
-      if (!body.trim()) return resolve({});
-      try {
-        resolve(JSON.parse(body));
-      } catch {
-        const err = new Error('Invalid JSON payload');
-        err.statusCode = 400;
-        reject(err);
-      }
-    });
+    req.on('error', (error) => reject(new Error(`Request stream error: ${error.message}`)));
+    req.on('data', (chunk) => { body += chunk; if (body.length > maxSize) { req.destroy(); reject(Object.assign(new Error('Payload too large'), { statusCode: 413 })); } });
+    req.on('end', () => { if (!body.trim()) return resolve({}); try { resolve(JSON.parse(body)); } catch { reject(Object.assign(new Error('Invalid JSON payload'), { statusCode: 400 })); } });
   });
 }
+export function sendJson(res, statusCode, data) { if (!res.writableEnded) { res.writeHead(statusCode, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); } }
+const cookie = (name, value, maxAge) => `${name}=${encodeURIComponent(value)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
+const csrfCookie = (value, maxAge) => `aion_csrf=${encodeURIComponent(value)}; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
+const clearCookie = (name) => `${name}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`;
 
-/**
- * Utility to send JSON response
- */
-export function sendJson(res, statusCode, data) {
-  if (res.writableEnded) return;
-  res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(data));
+export function getCookie(req, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(req.headers?.cookie || '').match(new RegExp(`(?:^|;\\s*)${escaped}=([^;]+)`));
+  return match ? decodeURIComponent(match[1]) : null;
 }
+export function verifyCsrf(req) {
+  const cookieValue = getCookie(req, 'aion_csrf'); const headerValue = req.headers?.['x-aion-csrf'];
+  if (!cookieValue || typeof headerValue !== 'string') return false;
+  const left = Buffer.from(cookieValue), right = Buffer.from(headerValue);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+async function identityContext(req, capability) { return authorize(extractToken(req), capability); }
+async function bootstrapContext(req) { return getDesktopBootstrapContext(getCookie(req, 'aion_bootstrap')); }
+function error(res, err) { return sendJson(res, err.statusCode || 400, { status: 'error', error: err.message || 'Security operation failed' }); }
 
-/**
- * GET /api/auth/pin
- * Returns current rolling PIN, expiration timestamp, and remaining milliseconds
- * Restricted strictly to localhost to prevent network PIN leakage
- */
-export async function handleGetPin(req, res) {
+async function localSession(req, res) {
+  if (!isLocalhost(req) || !verifyLocalAuthSecret(req)) return sendJson(res, 401, { status: 'error', error: 'Verified native desktop authentication required' });
   try {
-    if (!isAuthenticated(req) && !verifyLocalAuthSecret(req)) {
-      return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
-    }
-    const pinInfo = getRollingPinInfo();
-    return sendJson(res, 200, {
-      status: 'ok',
-      currentPin: pinInfo.currentPin,
-      expiresAt: pinInfo.expiresAt,
-      milliseconds_remaining: pinInfo.milliseconds_remaining,
-      millisecondsRemaining: pinInfo.millisecondsRemaining,
-      pin: pinInfo.currentPin,
-    });
-  } catch (err) {
-    logEvent('ERROR', `Failed to get rolling PIN: ${err.message}`);
-    return sendJson(res, 500, { status: 'error', error: err.message });
-  }
+    const session = await issueDesktopBootstrap(); const csrf = crypto.randomBytes(32).toString('base64url');
+    res.setHeader('Set-Cookie', [cookie('aion_bootstrap', session.token, 300), csrfCookie(csrf, 300)]);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end('<!doctype html><meta charset="utf-8"><script>location.replace("/")</script>');
+  } catch (err) { error(res, err); }
 }
-
-/**
- * Creates the desktop WebView2's HttpOnly session cookie. The only accepted
- * credential is an in-memory secret passed directly by the native host when it
- * starts Node; normal loopback traffic cannot mint a session by location alone.
- */
-export async function handleLocalSession(req, res) {
-  if (!isLocalhost(req) || !verifyLocalAuthSecret(req)) {
-    return sendJson(res, 401, { status: 'error', error: 'Local desktop authentication required' });
-  }
-
-  res.setHeader(
-    'Set-Cookie',
-    `aion_token=${process.env.AION_LOCAL_AUTH_SECRET}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`
-  );
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end('<!doctype html><meta charset="utf-8"><script>location.replace("/")</script>');
-  return true;
-}
-
-/**
- * GET /api/auth/status
- * Returns current client authentication status and localhost presence
- */
-export async function handleGetAuthStatus(req, res) {
+async function authenticate(req, res) {
   try {
-    const authed = isAuthenticated(req);
-    const local = isLocalhost(req);
-    const pinInfo = local ? getRollingPinInfo() : null;
-
-    return sendJson(res, 200, {
-      status: 'ok',
-      authenticated: authed,
-      isLocalhost: local,
-      pin: pinInfo ? pinInfo.currentPin : undefined,
-      currentPin: pinInfo ? pinInfo.currentPin : undefined,
-      expiresAt: pinInfo ? pinInfo.expiresAt : undefined,
-      milliseconds_remaining: pinInfo ? pinInfo.milliseconds_remaining : undefined,
-    });
-  } catch (err) {
-    logEvent('ERROR', `Auth status error: ${err.message}`);
-    return sendJson(res, 500, { status: 'error', error: err.message });
-  }
+    const result = await authenticateChallenge(await readJsonBody(req)); const csrf = crypto.randomBytes(32).toString('base64url');
+    res.setHeader('Set-Cookie', [cookie('aion_session', result.token, 20 * 60), csrfCookie(csrf, 20 * 60), clearCookie('aion_bootstrap')]);
+    return sendJson(res, 200, { status: 'ok', deviceId: result.deviceId, role: result.role, expiresAt: result.expiresAt });
+  } catch (err) { return error(res, err); }
 }
-
-/**
- * POST /api/auth/pair
- * Validates PIN (with 15s grace), creates 64-char token, saves device, and sets cookie
- * Enforces rate limiting per IP (5 failed attempts per 60s)
- */
-export async function handlePair(req, res) {
-  return sendJson(res, 410, { status: 'disabled', error: 'PIN pairing is retired. Use device-key enrollment.' });
-  /* try {
-    const clientIp = getSocketRemoteAddress(req);
-    const rateCheck = checkPairRateLimit(clientIp);
-    if (!rateCheck.allowed) {
-      res.setHeader('Retry-After', String(rateCheck.retryAfter));
-      return sendJson(res, 429, {
-        status: 'error',
-        error: `Too many failed pairing attempts. Please retry after ${rateCheck.retryAfter} seconds.`,
-        retryAfter: rateCheck.retryAfter,
-      });
-    }
-
-    const body = await readJsonBody(req, 64 * 1024);
-    const userAgent = req.headers?.['user-agent'] || '';
-
-    const result = pairDevice({
-      pin: body.pin,
-      deviceName: body.deviceName,
-      userAgent,
-      ip: clientIp,
-      remember: body.remember !== false,
-    });
-
-    if (!result.success) {
-      recordFailedPairAttempt(clientIp);
-      return sendJson(res, 401, { status: 'error', error: result.error });
-    }
-
-    resetPairRateLimit(clientIp);
-
-    // Set persistent secure cookie
-    res.setHeader(
-      'Set-Cookie',
-      `aion_token=${result.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`
-    );
-
-    return sendJson(res, 200, {
-      status: 'ok',
-      ...result,
-    });
-  } catch (err) {
-    logEvent('ERROR', `Pairing error: ${err.message}`);
-    return sendJson(res, 500, { status: 'error', error: err.message });
-  } */
-}
-
-async function handleIdentityRequest(req, res, action) {
+async function protectedAction(req, res, action) {
   try {
-    const body = await readJsonBody(req, 64 * 1024);
+    const body = await readJsonBody(req);
     if (action === 'enroll-owner') {
-      if (!verifyLocalAuthSecret(req) && !isDesktopSession(req)) return sendJson(res, 401, { status: 'error', error: 'Verified desktop session required' });
+      if (!(await bootstrapContext(req))) return sendJson(res, 401, { status: 'error', error: 'Native desktop enrollment session required' });
       return sendJson(res, 201, { status: 'ok', ...(await enrollInitialOwner(body)) });
     }
-    if (action === 'challenge') return sendJson(res, 200, { status: 'ok', ...(await createChallenge(body.deviceId)) });
-    if (action === 'authenticate') return sendJson(res, 200, { status: 'ok', ...(await authenticateChallenge(body)) });
-    if (action === 'enroll-device') {
-      const actor = await identityContext(req, 'identity:manage');
-      if (!actor) return sendJson(res, 401, { status: 'error', error: 'Owner authorization required' });
-      return sendJson(res, 201, { status: 'ok', ...(await createDevice(body, actor)) });
-    }
-    if (action === 'recover') {
-      if (!verifyLocalAuthSecret(req) && !isDesktopSession(req)) return sendJson(res, 401, { status: 'error', error: 'Verified desktop session required' });
+    if (action === 'recover-owner') {
+      if (!(await bootstrapContext(req))) return sendJson(res, 401, { status: 'error', error: 'Native desktop recovery session required' });
       return sendJson(res, 200, { status: 'ok', ...(await recoverOwner(body)) });
     }
-  } catch (err) { return sendJson(res, 400, { status: 'error', error: err.message }); }
+    const actor = await identityContext(req, 'identity:manage');
+    if (!actor) return sendJson(res, 403, { status: 'error', error: 'Owner authorization required' });
+    if (action === 'enroll-device') return sendJson(res, 201, { status: 'ok', ...(await createDevice(body, actor)) });
+    if (action === 'rotate-recovery') return sendJson(res, 200, { status: 'ok', ...(await rotateRecoveryKey(actor)) });
+    if (action === 'revoke-session') { await revokeSession(body.sessionId, actor); return sendJson(res, 200, { status: 'ok' }); }
+  } catch (err) { return error(res, err); }
 }
 
-async function identityContext(req, capability) {
-  if (isDesktopSession(req)) return { type: 'desktop', role: 'owner', deviceId: 'desktop' };
-  return authorize(extractToken(req), capability);
-}
-
-/**
- * GET /api/auth/devices
- * Lists all remembered devices (requires authentication or localhost)
- */
-export async function handleGetDevices(req, res) {
-  const context = await identityContext(req, 'identity:manage');
-  if (!context) {
-    return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
-  }
-  const devices = await listDevices();
-  return sendJson(res, 200, { status: 'ok', count: devices.length, devices });
-}
-
-/**
- * DELETE /api/auth/devices/:id
- * Revokes a trusted device by ID (requires authentication or localhost)
- */
-export async function handleRevokeDevice(req, res, deviceId) {
-  const context = await identityContext(req, 'identity:manage');
-  if (!context) {
-    return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
-  }
-
-  if (!deviceId) {
-    return sendJson(res, 400, { status: 'error', error: 'Device ID is required' });
-  }
-
-  try {
-    await revokeIdentityDevice(deviceId, context);
-    removeDeviceFromRegistry(deviceId);
-    return sendJson(res, 200, { status: 'ok', success: true, message: 'Device revoked' });
-  } catch (err) { return sendJson(res, 400, { status: 'error', error: err.message }); }
-}
-
-/**
- * POST /api/auth/pin/regenerate
- * Forcefully regenerates the rolling PIN immediately (requires authentication or localhost)
- */
-export async function handleRegeneratePin(req, res) {
-  if (!isAuthenticated(req)) {
-    return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
-  }
-
-  const newPin = regeneratePairingPin();
-  const pinInfo = getRollingPinInfo();
-
-  return sendJson(res, 200, {
-    status: 'ok',
-    pin: newPin,
-    currentPin: pinInfo.currentPin,
-    expiresAt: pinInfo.expiresAt,
-    milliseconds_remaining: pinInfo.milliseconds_remaining,
-  });
-}
-
-/**
- * Central dispatcher for all /api/auth/* routes
- */
 export async function handleAuthRoutes(req, res, urlPath) {
-  if (urlPath === '/api/auth/local-session' && req.method === 'GET') {
-    return handleLocalSession(req, res);
-  }
-  if (urlPath === '/api/auth/enroll-owner' && req.method === 'POST') return handleIdentityRequest(req, res, 'enroll-owner');
-  if (urlPath === '/api/auth/challenge' && req.method === 'POST') return handleIdentityRequest(req, res, 'challenge');
-  if (urlPath === '/api/auth/authenticate' && req.method === 'POST') return handleIdentityRequest(req, res, 'authenticate');
-  if (urlPath === '/api/auth/enroll-device' && req.method === 'POST') return handleIdentityRequest(req, res, 'enroll-device');
-  if (urlPath === '/api/auth/recover-owner' && req.method === 'POST') return handleIdentityRequest(req, res, 'recover');
-  // GET /api/auth/pin
-  if (urlPath === '/api/auth/pin' && req.method === 'GET') {
-    return handleGetPin(req, res);
-  }
-
-  // GET /api/auth/status
+  if (urlPath === '/api/auth/local-session' && req.method === 'GET') return localSession(req, res);
   if (urlPath === '/api/auth/status' && req.method === 'GET') {
-    return handleGetAuthStatus(req, res);
+    try { const state = await getIdentityStatus(); const context = await identityContext(req, 'devices:read'); return sendJson(res, 200, { status: 'ok', ...state, authenticated: Boolean(context), role: context?.role || null, deviceId: context?.deviceId || null }); } catch (err) { return error(res, err); }
   }
-
-  // POST /api/auth/pair
-  if (urlPath === '/api/auth/pair' && req.method === 'POST') {
-    return handlePair(req, res);
-  }
-
-  // GET /api/auth/devices
-  if (urlPath === '/api/auth/devices' && req.method === 'GET') {
-    return handleGetDevices(req, res);
-  }
-
-  // DELETE /api/auth/devices/:id
-  const revokeMatch = urlPath.match(/^\/api\/auth\/devices\/([^/]+)$/);
-  if (revokeMatch && req.method === 'DELETE') {
-    const id = decodeURIComponent(revokeMatch[1]);
-    return handleRevokeDevice(req, res, id);
-  }
-
-  // POST /api/auth/pin/regenerate
-  if (urlPath === '/api/auth/pin/regenerate' && req.method === 'POST') {
-    return handleRegeneratePin(req, res);
-  }
-
+  if (urlPath === '/api/auth/challenge' && req.method === 'POST') { try { return sendJson(res, 200, { status: 'ok', ...(await createChallenge((await readJsonBody(req)).deviceId)) }); } catch (err) { return error(res, err); } }
+  if (urlPath === '/api/auth/authenticate' && req.method === 'POST') return authenticate(req, res);
+  if (urlPath === '/api/auth/enroll-owner' && req.method === 'POST') return protectedAction(req, res, 'enroll-owner');
+  if (urlPath === '/api/auth/recover-owner' && req.method === 'POST') return protectedAction(req, res, 'recover-owner');
+  if (urlPath === '/api/auth/enroll-device' && req.method === 'POST') return protectedAction(req, res, 'enroll-device');
+  if (urlPath === '/api/auth/recovery/rotate' && req.method === 'POST') return protectedAction(req, res, 'rotate-recovery');
+  if (urlPath === '/api/auth/sessions/revoke' && req.method === 'POST') return protectedAction(req, res, 'revoke-session');
+  if (urlPath === '/api/auth/devices' && req.method === 'GET') { const actor = await identityContext(req, 'identity:manage'); return actor ? sendJson(res, 200, { status: 'ok', devices: await listDevices() }) : sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); }
+  if (urlPath === '/api/auth/sessions' && req.method === 'GET') { const actor = await identityContext(req, 'identity:manage'); return actor ? sendJson(res, 200, { status: 'ok', sessions: await listSessions() }) : sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); }
+  if (urlPath === '/api/auth/audit' && req.method === 'GET') { const actor = await identityContext(req, 'identity:manage'); return actor ? sendJson(res, 200, { status: 'ok', events: await listAuditEvents() }) : sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); }
+  const revoke = urlPath.match(/^\/api\/auth\/devices\/([^/]+)$/);
+  if (revoke && req.method === 'DELETE') { const actor = await identityContext(req, 'identity:manage'); if (!actor) return sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); try { await revokeDevice(decodeURIComponent(revoke[1]), actor); return sendJson(res, 200, { status: 'ok' }); } catch (err) { return error(res, err); } }
   return false;
 }

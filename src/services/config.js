@@ -20,6 +20,7 @@ export const DEFAULT_CONFIG = {
     order: ['cpu', 'memory', 'disk', 'gpu', 'network', 'uptime'],
   },
   theme: 'dark',
+  resourcePolicy: 'balanced',
 };
 
 /**
@@ -52,6 +53,7 @@ export function loadConfig() {
               ? parsed.telemetryDeck.order
               : DEFAULT_CONFIG.telemetryDeck.order,
           },
+          resourcePolicy: ['eco', 'balanced', 'performance'].includes(parsed.resourcePolicy) ? parsed.resourcePolicy : DEFAULT_CONFIG.resourcePolicy,
         };
       }
     }

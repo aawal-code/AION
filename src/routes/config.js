@@ -1,4 +1,5 @@
 import { loadConfig, saveConfig } from '../services/config.js';
+import { setResourcePolicy } from '../services/telemetry.js';
 
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
@@ -33,6 +34,7 @@ export async function handlePostConfig(req, res) {
     }
     const body = bodyStr ? JSON.parse(bodyStr) : {};
     const updated = saveConfig(body);
+    if (body.resourcePolicy) setResourcePolicy(updated.resourcePolicy);
     return sendJson(res, 200, { status: 'ok', config: updated });
   } catch (err) {
     return sendJson(res, 400, { status: 'error', error: err.message });

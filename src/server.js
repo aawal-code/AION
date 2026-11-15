@@ -1,9 +1,12 @@
 import http from 'http';
 import { handleRequest } from './routes/router.js';
 import { logEvent, closeAllSseClients } from './services/sse.js';
+import { loadConfig } from './services/config.js';
+import { setResourcePolicy } from './services/telemetry.js';
 
 const PORT = parseInt(process.env.PORT, 10) || 5050;
 const HOST = process.env.AION_BIND_HOST || '127.0.0.1';
+setResourcePolicy(loadConfig().resourcePolicy || 'balanced');
 
 const server = http.createServer(handleRequest);
 
