@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
+import { listAuthorizedIdentityDevices } from '../services/identity-api.js';
 import { extractToken, isLocalhost, verifyLocalAuthSecret } from '../services/auth.js';
 import {
   authenticateChallenge, authorize, createChallenge, createDevice, enrollInitialOwner,
   getDesktopBootstrapContext, getIdentityStatus, issueDesktopBootstrap, listAuditEvents,
-  listDevices, listPairingInvitations, listSessions, recoverOwner, revokeDevice, revokeSession, rotateRecoveryKey,
+  listPairingInvitations, listSessions, recoverOwner, revokeDevice, revokeSession, rotateRecoveryKey,
   createPairingInvitation, claimPairingInvitation, approvePairingInvitation, getPairingInvitationStatus,
 } from '../services/identity-store.js';
 
@@ -92,7 +93,7 @@ export async function handleAuthRoutes(req, res, urlPath) {
   if (urlPath === '/api/auth/enroll-device' && req.method === 'POST') return protectedAction(req, res, 'enroll-device');
   if (urlPath === '/api/auth/recovery/rotate' && req.method === 'POST') return protectedAction(req, res, 'rotate-recovery');
   if (urlPath === '/api/auth/sessions/revoke' && req.method === 'POST') return protectedAction(req, res, 'revoke-session');
-  if (urlPath === '/api/auth/devices' && req.method === 'GET') { const actor = await identityContext(req, 'identity:manage'); return actor ? sendJson(res, 200, { status: 'ok', devices: await listDevices() }) : sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); }
+  if (urlPath === '/api/auth/devices' && req.method === 'GET') { const devices = await listAuthorizedIdentityDevices(extractToken(req)); return devices ? sendJson(res, 200, { status: 'ok', devices }) : sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); }
   if (urlPath === '/api/auth/sessions' && req.method === 'GET') { const actor = await identityContext(req, 'identity:manage'); return actor ? sendJson(res, 200, { status: 'ok', sessions: await listSessions() }) : sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); }
   if (urlPath === '/api/auth/audit' && req.method === 'GET') { const actor = await identityContext(req, 'identity:manage'); return actor ? sendJson(res, 200, { status: 'ok', events: await listAuditEvents() }) : sendJson(res, 403, { status: 'error', error: 'Owner authorization required' }); }
   const revoke = urlPath.match(/^\/api\/auth\/devices\/([^/]+)$/);
