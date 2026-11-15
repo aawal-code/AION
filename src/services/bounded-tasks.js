@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import childProcess from 'node:child_process';
+import path from 'node:path';
 import { getDb, getProject, getSession } from './assistant-db.js';
 
 const MAX_BYTES = 64 * 1024;
@@ -22,9 +24,9 @@ async function database() {
     // A process restart cannot prove whether a previously running action finished.
     db.exec('BEGIN IMMEDIATE');
     try {
-      const running = db.prepare("SELECT id FROM bounded_tasks WHERE status='running'").all();
+      const running = db.prepare("SELECT id FROM bounded_tasks WHERE status IN ('running','dispatching')").all();
       const now = new Date().toISOString();
-      for (const row of running) { db.prepare("UPDATE bounded_tasks SET status='interrupted', finished_at=?, error='Host restarted during execution' WHERE id=? AND status='running'").run(now, row.id); db.prepare('INSERT INTO bounded_task_checkpoints(task_id,at,event,actor,detail) VALUES(?,?,?,?,?)').run(row.id, now, 'interrupted', 'host', '{}'); }
+      for (const row of running) { db.prepare("UPDATE bounded_tasks SET status='interrupted', finished_at=?, error='Host restarted during execution' WHERE id=? AND status IN ('running','dispatching')").run(now, row.id); db.prepare('INSERT INTO bounded_task_checkpoints(task_id,at,event,actor,detail) VALUES(?,?,?,?,?)').run(row.id, now, 'interrupted', 'host', '{}'); }
       db.exec('COMMIT'); initialized = true;
     } catch (error) { db.exec('ROLLBACK'); throw error; }
   }
@@ -37,12 +39,14 @@ export async function createBoundedTask(body, actor) {
   if (!actor?.deviceId) throw new Error('Device authorization is required');
   if (!body || typeof body !== 'object' || Object.keys(body).some((key) => !['projectId', 'sessionId', 'title', 'action', 'input', 'targetHost', 'folders', 'permissions', 'maxInputBytes', 'maxDurationMs', 'expiresInMinutes'].includes(key))) throw new Error('Invalid task scope or budget');
   const { projectId, sessionId = null, title, action, input, targetHost, folders, permissions, maxInputBytes, maxDurationMs, expiresInMinutes } = body || {};
-  if (typeof projectId !== 'string' || typeof title !== 'string' || !title.trim() || title.length > 160 || action !== 'hash_text' || typeof input !== 'string' || Buffer.byteLength(input) > MAX_BYTES || targetHost !== 'local' || !Array.isArray(folders) || folders.length !== 0 || !Array.isArray(permissions) || permissions.length !== 1 || permissions[0] !== 'compute:sha256' || !Number.isInteger(maxInputBytes) || maxInputBytes < Buffer.byteLength(input) || maxInputBytes > MAX_BYTES || !Number.isInteger(maxDurationMs) || maxDurationMs < 100 || maxDurationMs > 5000 || !Number.isInteger(expiresInMinutes) || expiresInMinutes < 1 || expiresInMinutes > 60) throw new Error('Invalid task scope or budget');
+  const hashAction = action === 'hash_text' && permissions?.length === 1 && permissions[0] === 'compute:sha256';
+  const lockAction = action === 'workstation_lock' && permissions?.length === 1 && permissions[0] === 'workstation:lock' && input === '' && maxInputBytes === 0;
+  if (typeof projectId !== 'string' || typeof title !== 'string' || !title.trim() || title.length > 160 || !(hashAction || lockAction) || typeof input !== 'string' || Buffer.byteLength(input) > MAX_BYTES || targetHost !== 'local' || !Array.isArray(folders) || folders.length !== 0 || !Array.isArray(permissions) || permissions.length !== 1 || !Number.isInteger(maxInputBytes) || maxInputBytes < Buffer.byteLength(input) || maxInputBytes > MAX_BYTES || !Number.isInteger(maxDurationMs) || maxDurationMs < 100 || maxDurationMs > 5000 || !Number.isInteger(expiresInMinutes) || expiresInMinutes < 1 || expiresInMinutes > 60) throw new Error('Invalid task scope or budget');
   const db = await database(); const project = await getProject(projectId); if (!project || project.archived_at) throw new Error('Project unavailable');
   if (sessionId) { const session = await getSession(sessionId); if (!session || session.project_id !== projectId) throw new Error('Conversation does not belong to this project'); }
   const id = randomUUID(), now = new Date(), createdAt = now.toISOString(), expiresAt = new Date(now.getTime() + expiresInMinutes * 60000).toISOString();
   db.exec('BEGIN IMMEDIATE'); try {
-    db.prepare('INSERT INTO bounded_tasks(id,project_id,session_id,title,action,input_text,target_host,folders,permissions,max_input_bytes,max_duration_ms,status,created_at,expires_at,requested_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id, projectId, sessionId, title.trim(), action, input, targetHost, '[]', '["compute:sha256"]', maxInputBytes, maxDurationMs, 'pending', createdAt, expiresAt, actor.deviceId);
+    db.prepare('INSERT INTO bounded_tasks(id,project_id,session_id,title,action,input_text,target_host,folders,permissions,max_input_bytes,max_duration_ms,status,created_at,expires_at,requested_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id, projectId, sessionId, title.trim(), action, input, targetHost, '[]', JSON.stringify(permissions), maxInputBytes, maxDurationMs, 'pending', createdAt, expiresAt, actor.deviceId);
     record(db, id, 'proposed', actor.deviceId); db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return getBoundedTask(id);
@@ -63,7 +67,7 @@ export async function cancelBoundedTask(id, actor) {
 export async function startBoundedTask(id, actor) {
   requireOwner(actor); const db = await database(), now = new Date().toISOString(); db.exec('BEGIN IMMEDIATE');
   try {
-    const updated = db.prepare("UPDATE bounded_tasks SET status='running', started_at=? WHERE id=? AND status='approved' AND expires_at>? AND (SELECT COUNT(*) FROM bounded_tasks WHERE status='running') < 4 AND EXISTS (SELECT 1 FROM projects WHERE projects.id=bounded_tasks.project_id AND projects.archived_at IS NULL)").run(now, id, now);
+    const updated = db.prepare("UPDATE bounded_tasks SET status='running', started_at=? WHERE id=? AND status='approved' AND expires_at>? AND (SELECT COUNT(*) FROM bounded_tasks WHERE status IN ('running','dispatching')) < 4 AND EXISTS (SELECT 1 FROM projects WHERE projects.id=bounded_tasks.project_id AND projects.archived_at IS NULL)").run(now, id, now);
     if (!updated.changes) throw new Error('Task is unavailable, expired, already used, or not approved');
     record(db, id, 'started', actor.deviceId); db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
@@ -73,7 +77,23 @@ async function run(id) {
   const db = await database(), task = await getBoundedTask(id); if (!task || task.status !== 'running') return;
   const started = Date.now(), bytes = Buffer.from(task.input_text), digest = createHash('sha256');
   try {
-    if (task.action !== 'hash_text' || task.target_host !== 'local' || task.folders.length || task.permissions.length !== 1 || task.permissions[0] !== 'compute:sha256' || bytes.length > task.max_input_bytes || task.max_input_bytes > MAX_BYTES || task.max_duration_ms > 5000) throw new Error('Task scope is invalid');
+    if (task.target_host !== 'local' || task.folders.length || task.permissions.length !== 1 || bytes.length > task.max_input_bytes || task.max_input_bytes > MAX_BYTES || task.max_duration_ms > 5000) throw new Error('Task scope is invalid');
+    if (task.action === 'workstation_lock') {
+      if (task.permissions[0] !== 'workstation:lock' || bytes.length !== 0 || task.max_input_bytes !== 0 || process.platform !== 'win32') throw new Error('Workstation lock is unavailable');
+      // Once dispatch begins, cancellation cannot honestly promise to prevent a lock.
+      db.exec('BEGIN IMMEDIATE');
+      try { const changed = db.prepare("UPDATE bounded_tasks SET status='dispatching' WHERE id=? AND status='running'").run(id); if (!changed.changes) { db.exec('ROLLBACK'); return; } record(db, id, 'dispatching', 'host'); db.exec('COMMIT'); } catch (error) { db.exec('ROLLBACK'); throw error; }
+      const executable = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+      const script = `Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class AionLock { [DllImport("user32.dll", SetLastError=true)] public static extern bool LockWorkStation(); }'; if (-not [AionLock]::LockWorkStation()) { exit 1 }`;
+      try {
+        await new Promise((resolve, reject) => childProcess.execFile(executable, ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: task.max_duration_ms }, (error) => error ? reject(error) : resolve()));
+        db.exec('BEGIN IMMEDIATE'); try { const changed = db.prepare("UPDATE bounded_tasks SET status='requested', result=?, finished_at=? WHERE id=? AND status='dispatching'").run(JSON.stringify({ requested: true, confirmed: false }), new Date().toISOString(), id); if (changed.changes) record(db, id, 'lock_requested', 'host'); db.exec('COMMIT'); } catch (error) { db.exec('ROLLBACK'); throw error; }
+      } catch {
+        db.exec('BEGIN IMMEDIATE'); try { const changed = db.prepare("UPDATE bounded_tasks SET status='unknown', error=?, finished_at=? WHERE id=? AND status='dispatching'").run('Lock request outcome could not be verified', new Date().toISOString(), id); if (changed.changes) record(db, id, 'outcome_unknown', 'host'); db.exec('COMMIT'); } catch { db.exec('ROLLBACK'); }
+      }
+      return;
+    }
+    if (task.action !== 'hash_text' || task.permissions[0] !== 'compute:sha256') throw new Error('Task scope is invalid');
     for (let offset = 0; offset < bytes.length; offset += CHUNK_BYTES) {
       await new Promise((resolve) => setImmediate(resolve));
       if ((await getBoundedTask(id))?.status !== 'running') return;

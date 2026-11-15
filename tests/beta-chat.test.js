@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { execFile } from 'node:child_process';
+import childProcess, { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -118,11 +118,31 @@ test('Master spec §2/§5/§6: authenticated chat persists project-bound convers
   await post(`/api/assistant/tasks/${expiredApproved.id}/approve`, {}, h); (await getDb()).prepare('UPDATE bounded_tasks SET expires_at=? WHERE id=?').run('2000-01-01T00:00:00.000Z', expiredApproved.id);
   response = await post(`/api/assistant/tasks/${expiredApproved.id}/run`, {}, h); assert.equal(response.status, 409);
   response = await post('/api/assistant/tasks', proposal, h); const restarted = (await response.json()).task;
-  (await getDb()).prepare("UPDATE bounded_tasks SET status='running' WHERE id=?").run(restarted.id); closeDb();
+  (await getDb()).prepare("UPDATE bounded_tasks SET status='dispatching' WHERE id=?").run(restarted.id); closeDb();
   const moduleUrl = new URL('../src/services/bounded-tasks.js', import.meta.url).href;
   const script = `const m = await import(${JSON.stringify(moduleUrl)}); console.log(JSON.stringify([await m.getBoundedTask(${JSON.stringify(restarted.id)}), await m.getBoundedTask(${JSON.stringify(task.id)})]));`;
   const child = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env, AION_ASSISTANT_DB_PATH: path.join(root, 'assistant.sqlite') }, windowsHide: true });
   const recovered = JSON.parse(child.stdout.trim()); assert.equal(recovered[0].status, 'interrupted'); assert.equal(recovered[1].status, 'completed'); assert.equal(recovered[1].result.sha256, crypto.createHash('sha256').update(proposal.input).digest('hex'));
+  // Lock dispatch is mocked: the test never locks the real workstation.
+  const calls = []; const lockMock = t.mock.method(childProcess, 'execFile', (exe, args, options, callback) => { calls.push({ exe, args, options }); setImmediate(() => callback(null, '', '')); return {}; });
+  const lockProposal = { ...proposal, title: 'Lock workstation', action: 'workstation_lock', input: '', permissions: ['workstation:lock'], maxInputBytes: 0, maxDurationMs: 5000 };
+  response = await post('/api/assistant/tasks', { ...lockProposal, input: 'command' }, h); assert.equal(response.status, 400);
+  response = await post('/api/assistant/tasks', lockProposal, h); assert.equal(response.status, 201); const lockTask = (await response.json()).task;
+  response = await post(`/api/assistant/tasks/${lockTask.id}/run`, {}, h); assert.equal(response.status, 409); assert.equal(calls.length, 0);
+  response = await post(`/api/assistant/tasks/${lockTask.id}/approve`, {}, headers(jar2, csrf2)); assert.equal(response.status, 403);
+  response = await post(`/api/assistant/tasks/${lockTask.id}/approve`, {}, h); assert.equal(response.status, 200);
+  response = await post(`/api/assistant/tasks/${lockTask.id}/run`, {}, h); assert.equal(response.status, 200);
+  let lockResult; for (let i = 0; i < 100; i++) { response = await fetch(origin + `/api/assistant/tasks/${lockTask.id}`, { headers: { cookie: jar } }); lockResult = await response.json(); if (lockResult.task.status === 'requested') break; await new Promise((resolve) => setTimeout(resolve, 10)); }
+  assert.equal(lockResult.task.status, 'requested'); assert.deepEqual(lockResult.task.result, { requested: true, confirmed: false }); assert.equal(calls.length, 1); assert.equal(calls[0].options.windowsHide, true); assert.equal(calls[0].options.timeout, 5000); assert.match(calls[0].exe, /powershell\.exe$/i); assert.match(calls[0].args.at(-1), /LockWorkStation/);
+  response = await post(`/api/assistant/tasks/${lockTask.id}/run`, {}, h); assert.equal(response.status, 409); lockMock.mock.restore();
+  let finishLock; const timeoutMock = t.mock.method(childProcess, 'execFile', (_exe, _args, _options, callback) => { finishLock = callback; return {}; });
+  response = await post('/api/assistant/tasks', lockProposal, h); const uncertain = (await response.json()).task;
+  await post(`/api/assistant/tasks/${uncertain.id}/approve`, {}, h); await post(`/api/assistant/tasks/${uncertain.id}/run`, {}, h);
+  for (let i = 0; i < 100 && !finishLock; i++) await new Promise((resolve) => setTimeout(resolve, 5)); assert.ok(finishLock);
+  response = await post(`/api/assistant/tasks/${uncertain.id}/cancel`, {}, h); assert.equal(response.status, 409);
+  finishLock(new Error('synthetic timeout')); let unknown;
+  for (let i = 0; i < 100; i++) { response = await fetch(origin + `/api/assistant/tasks/${uncertain.id}`, { headers: { cookie: jar } }); unknown = await response.json(); if (unknown.task.status === 'unknown') break; await new Promise((resolve) => setTimeout(resolve, 5)); }
+  assert.equal(unknown.task.status, 'unknown'); response = await post(`/api/assistant/tasks/${uncertain.id}/run`, {}, h); assert.equal(response.status, 409); timeoutMock.mock.restore();
   process.env.ANTHROPIC_API_KEY = 'synthetic-only'; const { streamPrompt } = await import('../src/services/llm-provider.js'); let observed = '';
   globalThis.fetch = async () => new Response('event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Claude reply"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n');
   const result = await streamPrompt({ prompt: 'test', mode: 'plan', provider: 'anthropic', history: [], signal: new AbortController().signal, onText: async (part) => { observed += part; } }); assert.equal(result.content, 'Claude reply'); assert.equal(observed, 'Claude reply');

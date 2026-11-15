@@ -1042,12 +1042,13 @@
               </details>
               <details class="assistant-project-manage" id="taskPanel">
                 <summary>Tasks and approvals</summary>
-                <p>Propose a bounded text hash. File access and commands are unavailable.</p>
+                <p>Propose a bounded action. File access and arbitrary commands are unavailable.</p>
                 <form id="taskProposalForm" class="assistant-project-form">
+                  <label for="taskAction">Action</label><select id="taskAction" class="modal-input"><option value="hash_text">Hash text</option><option value="workstation_lock">Request workstation lock</option></select>
                   <label for="taskTitle">Task name</label><input id="taskTitle" class="modal-input" maxlength="160" required>
-                  <label for="taskInput">Exact text to hash</label><textarea id="taskInput" class="modal-input" rows="3" maxlength="64000" required></textarea>
+                  <div id="taskInputGroup"><label for="taskInput">Exact text to hash</label><textarea id="taskInput" class="modal-input" rows="3" maxlength="64000" required></textarea></div>
                   <label for="taskHost">Execution host</label><select id="taskHost" class="modal-input" required><option value="">Choose a host</option><option value="local">This host</option></select>
-                  <p>Folders: none · Permission: compute SHA-256 · Limit: 64 KiB, 1 second · Approval expires in 10 minutes.</p>
+                  <p id="taskScopeHelp">Folders: none · Permission: compute SHA-256 · Limit: 64 KiB, 1 second · Approval expires in 10 minutes.</p>
                   <button class="btn-secondary" type="submit">Propose task</button>
                 </form>
                 <div id="taskList" aria-live="polite"></div><p id="taskError" role="alert" hidden></p>
