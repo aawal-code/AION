@@ -8,10 +8,13 @@ import test from 'node:test';
 test('Master spec §2: identity store enforces signed role sessions, explicit grants, expiry, revocation, replay and recovery', async () => {
   const sandbox = await mkdtemp(path.join(os.tmpdir(), 'aion-phase2a-'));
   const moduleUrl = new URL('../src/services/identity-store.js', import.meta.url).href;
+  const transportUrl = new URL('../src/services/transport-identity.js', import.meta.url).href;
   const code = `
     import assert from 'node:assert/strict'; import crypto from 'node:crypto';
     process.env.AION_SECURITY_DB_PATH = ${JSON.stringify(path.join(sandbox, 'security.sqlite'))};
+    process.env.AION_TRANSPORT_IDENTITY_PATH = ${JSON.stringify(path.join(sandbox, 'transport.dpapi'))};
     const s = await import(${JSON.stringify(moduleUrl)});
+    const transport = await import(${JSON.stringify(transportUrl)}); const transportIdentity = await transport.getTransportIdentity('synthetic');
     const owner = crypto.generateKeyPairSync('ed25519');
     const pem = owner.publicKey.export({type:'spki',format:'pem'});
     const enrolled = await s.enrollInitialOwner({name:'owner', publicKey:pem});
@@ -36,12 +39,13 @@ test('Master spec §2: identity store enforces signed role sessions, explicit gr
     const invitation = await s.createPairingInvitation({role:'owner',deviceId:enrolled.deviceId});
     assert.match(invitation.qrPayload, /^AION-PAIR:[0-9a-f-]{36}$/);
     const joining = crypto.generateKeyPairSync('ed25519');
-    const claim = await s.claimPairingInvitation({invitationId: invitation.invitationId, name:'Synthetic paired device', publicKey:joining.publicKey.export({type:'spki',format:'pem'})});
+    const claim = await s.claimPairingInvitation({invitationId: invitation.invitationId, name:'Synthetic paired device', publicKey:transportIdentity.devicePublicKey, transportCertificate:transportIdentity.certificate, transportBindingSignature:transportIdentity.signCertificateBinding()});
     assert.equal(claim.verificationCode, invitation.verificationCode, 'both devices receive the same non-authorizing comparison code');
-    await assert.rejects(() => s.claimPairingInvitation({invitationId: invitation.invitationId, name:'replay', publicKey:joining.publicKey.export({type:'spki',format:'pem'})}), /already used|concurrently/i);
+    await assert.rejects(() => s.claimPairingInvitation({invitationId: invitation.invitationId, name:'replay', publicKey:joining.publicKey.export({type:'spki',format:'pem'}), transportCertificate:transportIdentity.certificate, transportBindingSignature:transportIdentity.signCertificateBinding()}), /already used|concurrently/i);
     await assert.rejects(() => s.approvePairingInvitation({invitationId: invitation.invitationId, verificationCode:'000000'}, {role:'owner',deviceId:enrolled.deviceId}), /code/i);
     const paired = await s.approvePairingInvitation({invitationId: invitation.invitationId, verificationCode:invitation.verificationCode, role:'limited'}, {role:'owner',deviceId:enrolled.deviceId});
     assert.equal(paired.role, 'limited');
+    assert.equal(await s.authorizeTransportPeer({deviceId:paired.deviceId, certificate:transportIdentity.certificate, exporter:Buffer.from('synthetic exporter'), signature:transportIdentity.signChannel(Buffer.from('synthetic exporter'))}), null, 'Limited role cannot replicate');
     assert.equal((await s.getPairingInvitationStatus(invitation.invitationId)).status, 'approved');
     await assert.rejects(() => s.approvePairingInvitation({invitationId: invitation.invitationId, verificationCode:invitation.verificationCode}, {role:'owner',deviceId:enrolled.deviceId}), /awaiting/i);
     await assert.rejects(() => s.authenticateChallenge({challengeId:challenge.challengeId, signature}), /replay|invalid|expired/i);

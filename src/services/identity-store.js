@@ -6,14 +6,14 @@ const DB_PATH = process.env.AION_SECURITY_DB_PATH || path.resolve('data/security
 const SESSION_TTL = 20 * 60_000;
 const CHALLENGE_TTL = 2 * 60_000;
 const BOOTSTRAP_TTL = 5 * 60_000;
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const PAIRING_TTL = 5 * 60_000;
 let dbPromise;
 
 export const ROLES = Object.freeze({ OWNER: 'owner', TRUSTED: 'trusted', LIMITED: 'limited' });
 export const ROLE_CAPABILITIES = Object.freeze({
   owner: new Set(['*']),
-  trusted: new Set(['system:read', 'devices:read', 'conversation:read', 'conversation:write']),
+  trusted: new Set(['system:read', 'devices:read', 'conversation:read', 'conversation:write', 'sync:replicate']),
   limited: new Set(['devices:read']),
 });
 
@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS recovery_keys (id INTEGER PRIMARY KEY CHECK(id=1), sa
 CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY, event TEXT NOT NULL, device_id TEXT, detail TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS desktop_bootstrap_sessions (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT);
 CREATE TABLE IF NOT EXISTS device_capabilities (device_id TEXT NOT NULL, capability TEXT NOT NULL, granted_at TEXT NOT NULL, PRIMARY KEY(device_id, capability), FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE);`);
-      db.exec(`CREATE TABLE IF NOT EXISTS pairing_invitations (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL, display_code TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, claimed_at TEXT, claimed_name TEXT, claimed_public_key TEXT, approved_at TEXT, approved_device_id TEXT, cancelled_at TEXT, FOREIGN KEY(created_by) REFERENCES devices(id), FOREIGN KEY(approved_device_id) REFERENCES devices(id));`);
+      db.exec(`CREATE TABLE IF NOT EXISTS device_transport_certificates (device_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE, certificate TEXT NOT NULL, bound_at TEXT NOT NULL, FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE);`);
+      db.exec(`CREATE TABLE IF NOT EXISTS pairing_invitations (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL, display_code TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, claimed_at TEXT, claimed_name TEXT, claimed_public_key TEXT, claimed_transport_fingerprint TEXT, claimed_transport_certificate TEXT, approved_at TEXT, approved_device_id TEXT, cancelled_at TEXT, FOREIGN KEY(created_by) REFERENCES devices(id), FOREIGN KEY(approved_device_id) REFERENCES devices(id));`);
       const meta = db.prepare('SELECT version FROM schema_meta LIMIT 1').get();
       if (!meta) db.prepare('INSERT INTO schema_meta(version) VALUES (?)').run(SCHEMA_VERSION);
       else if (meta.version > SCHEMA_VERSION) throw new Error('Security storage was created by a newer AION version');
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS device_capabilities (device_id TEXT NOT NULL, capabil
         db.exec('BEGIN IMMEDIATE');
         try {
           if (meta.version < 5) db.exec("ALTER TABLE pairing_invitations ADD COLUMN display_code TEXT NOT NULL DEFAULT '';");
+          if (meta.version < 6) { db.exec("ALTER TABLE pairing_invitations ADD COLUMN claimed_transport_fingerprint TEXT; ALTER TABLE pairing_invitations ADD COLUMN claimed_transport_certificate TEXT;"); }
           const legacyDevices = db.prepare('SELECT id,role FROM devices WHERE revoked_at IS NULL').all();
           const insert = db.prepare('INSERT OR IGNORE INTO device_capabilities(device_id,capability,granted_at) VALUES (?,?,?)');
           for (const device of legacyDevices) for (const capability of capabilitiesForRole(device.role)) insert.run(device.id, capability, now());
@@ -86,6 +88,9 @@ function capabilitiesForRole(role, requested) {
 function pairingCode() { return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0'); }
 function pairingCodeHash(id, code) { return hash(`aion-pairing-v1:${id}:${code}`); }
 function equal(left, right) { const a = Buffer.from(String(left)); const b = Buffer.from(String(right)); return a.length === b.length && crypto.timingSafeEqual(a, b); }
+function certificateBinding(certificate) { const parsed = new crypto.X509Certificate(certificate); if (Date.parse(parsed.validTo) <= Date.now() || Date.parse(parsed.validFrom) > Date.now()) throw new Error('Transport certificate is not currently valid'); return { certificate: parsed.toString(), fingerprint: crypto.createHash('sha256').update(parsed.raw).digest('hex') }; }
+function bindingPayload(fingerprint) { return Buffer.from(`aion-transport-binding-v1:${fingerprint}`); }
+function channelPayload(fingerprint, exporter) { return Buffer.from(`aion-tls-channel-v1:${fingerprint}:${Buffer.from(exporter).toString('base64url')}`); }
 
 export async function getIdentityStatus() {
   const db = await database();
@@ -123,14 +128,15 @@ export async function createPairingInvitation(actor) {
   audit(db, 'pairing.invitation.created', actor.deviceId, { invitationId: id, expiresAt });
   return { invitationId: id, verificationCode: code, expiresAt, qrPayload: `AION-PAIR:${id}` };
 }
-export async function claimPairingInvitation({ invitationId, name: deviceName, publicKey: value }) {
+export async function claimPairingInvitation({ invitationId, name: deviceName, publicKey: value, transportCertificate, transportBindingSignature }) {
   const key = publicKey(value), db = await database(); db.exec('BEGIN IMMEDIATE');
   try {
     const invitation = db.prepare('SELECT * FROM pairing_invitations WHERE id=?').get(String(invitationId || ''));
     if (!invitation || invitation.cancelled_at || invitation.approved_at || invitation.claimed_at || Date.parse(invitation.expires_at) <= Date.now()) throw new Error('Pairing invitation is invalid, expired, or already used');
-    if (db.prepare('UPDATE pairing_invitations SET claimed_at=?,claimed_name=?,claimed_public_key=? WHERE id=? AND claimed_at IS NULL').run(now(), name(deviceName, 'AION device'), key, invitation.id).changes !== 1) throw new Error('Pairing invitation was claimed concurrently');
+    const transport = certificateBinding(transportCertificate); if (!crypto.verify(null, bindingPayload(transport.fingerprint), key, Buffer.from(String(transportBindingSignature || ''), 'base64url'))) throw new Error('Transport certificate binding signature is invalid');
+    if (db.prepare('UPDATE pairing_invitations SET claimed_at=?,claimed_name=?,claimed_public_key=?,claimed_transport_fingerprint=?,claimed_transport_certificate=? WHERE id=? AND claimed_at IS NULL').run(now(), name(deviceName, 'AION device'), key, transport.fingerprint, transport.certificate, invitation.id).changes !== 1) throw new Error('Pairing invitation was claimed concurrently');
     audit(db, 'pairing.invitation.claimed', null, { invitationId: invitation.id }); db.exec('COMMIT');
-    return { invitationId: invitation.id, verificationCode: invitation.display_code, expiresAt: invitation.expires_at, status: 'pending-owner-approval' };
+    return { invitationId: invitation.id, verificationCode: invitation.display_code, expiresAt: invitation.expires_at, status: 'pending-owner-approval', transport };
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
 export async function approvePairingInvitation({ invitationId, verificationCode, role = ROLES.LIMITED, capabilities }, actor) {
@@ -143,6 +149,8 @@ export async function approvePairingInvitation({ invitationId, verificationCode,
     if (!equal(invitation.code_hash, pairingCodeHash(invitation.id, verificationCode))) throw new Error('Verification code does not match this pairing invitation');
     const id = crypto.randomUUID();
     db.prepare('INSERT INTO devices(id,name,public_key,role,created_at,revoked_at) VALUES (?,?,?,?,?,NULL)').run(id, invitation.claimed_name, invitation.claimed_public_key, role, now());
+    if (!invitation.claimed_transport_fingerprint || !invitation.claimed_transport_certificate) throw new Error('Pairing invitation has no verified transport identity');
+    db.prepare('INSERT INTO device_transport_certificates(device_id,fingerprint,certificate,bound_at) VALUES (?,?,?,?)').run(id, invitation.claimed_transport_fingerprint, invitation.claimed_transport_certificate, now());
     const insert = db.prepare('INSERT INTO device_capabilities(device_id,capability,granted_at) VALUES (?,?,?)'); for (const capability of grants) insert.run(id, capability, now());
     db.prepare('UPDATE pairing_invitations SET approved_at=?,approved_device_id=? WHERE id=? AND approved_at IS NULL').run(now(), id, invitation.id);
     audit(db, 'pairing.invitation.approved', id, { invitationId: invitation.id, role, capabilities: grants, actor: actor.deviceId }); db.exec('COMMIT');
@@ -184,6 +192,17 @@ export async function getSessionContext(token) {
   return { sessionId: row.session_id, deviceId: row.device_id, role: row.role, capabilities: grants, type: 'device' };
 }
 export async function authorize(token, capability) { const context = await getSessionContext(token); return context && hasCapability(context.role, capability, context.capabilities) ? context : null; }
+export async function authorizeTransportPeer({ deviceId, certificate, exporter, signature, capability = 'sync:replicate' }) {
+  if (!deviceId || !exporter || !signature) return null;
+  const transport = certificateBinding(certificate); const db = await database();
+  const device = db.prepare('SELECT id,public_key,role,revoked_at FROM devices WHERE id=?').get(String(deviceId));
+  const binding = db.prepare('SELECT fingerprint FROM device_transport_certificates WHERE device_id=?').get(String(deviceId));
+  if (!device || device.revoked_at || !binding || binding.fingerprint !== transport.fingerprint) return null;
+  const grants = db.prepare('SELECT capability FROM device_capabilities WHERE device_id=?').all(device.id).map((row) => row.capability);
+  if (!hasCapability(device.role, capability, grants)) return null;
+  if (!crypto.verify(null, channelPayload(transport.fingerprint, exporter), device.public_key, Buffer.from(String(signature), 'base64url'))) return null;
+  return { deviceId: device.id, role: device.role, capabilities: grants, certificateFingerprint: transport.fingerprint, type: 'transport' };
+}
 export async function revokeDevice(deviceId, actor) {
   if (!actor || actor.role !== ROLES.OWNER) throw new Error('Owner authorization required'); const db = await database(); db.exec('BEGIN IMMEDIATE');
   try { const row = db.prepare('SELECT role FROM devices WHERE id=? AND revoked_at IS NULL').get(deviceId); if (!row) throw new Error('Device is already revoked or unknown'); if (row.role === ROLES.OWNER) throw new Error('Owner access can only be changed through recovery'); db.prepare('UPDATE devices SET revoked_at=? WHERE id=?').run(now(), deviceId); db.prepare('UPDATE sessions SET revoked_at=? WHERE device_id=? AND revoked_at IS NULL').run(now(), deviceId); audit(db, 'device.revoked', deviceId, { actor: actor.deviceId }); db.exec('COMMIT'); }
