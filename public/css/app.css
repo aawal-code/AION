@@ -4270,3 +4270,10 @@ html[dir="rtl"] .apple-switch input:checked + .apple-switch-slider::before {
 .assistant-project-form label { font-size: 12px; color: var(--text-secondary); }
 .assistant-project-form .modal-input { width: 100%; box-sizing: border-box; }
 .assistant-project-form-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.assistant-project-manage { margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
+.assistant-project-manage summary { cursor: pointer; color: var(--text-primary); }
+.assistant-project-manage ul { padding-inline-start: 18px; overflow-wrap: anywhere; }
+
+.assistant-projects-sidebar { overflow-y: auto; min-height: 0; }
+.assistant-project-manage { flex-shrink: 0; }

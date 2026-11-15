@@ -58,6 +58,12 @@ export function initSchema(db) {
     );
   `);
 
+  if (!db.prepare('PRAGMA table_info(projects)').all().some((column) => column.name === 'archived_at')) db.exec('ALTER TABLE projects ADD COLUMN archived_at TEXT');
+  db.exec(`CREATE TABLE IF NOT EXISTS project_folders (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+    path TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(project_id, path)
+  )`);
+
   // 2. Sessions Table
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -151,6 +157,7 @@ export async function getSession(id) {
 
 export async function createSession({ id, projectId, title = 'New Chat', mode = 'ask', createdAt = null }) {
   const db = await getDb();
+  const project = await getProject(projectId); if (!project || project.archived_at) throw new Error('Project unavailable');
   const sessionId = id || `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const timestamp = createdAt || new Date().toISOString();
 
@@ -222,4 +229,26 @@ export function closeDb() {
     } catch {}
     dbInstance = null;
   }
+}export async function updateProject(id, changes) {
+  const db = await getDb(); const current = await getProject(id); if (!current) return null;
+  const keys = Object.keys(changes);
+  if (!keys.length || keys.some((key) => !['name', 'archived'].includes(key))) throw new Error('Invalid project update');
+  if ('name' in changes && (typeof changes.name !== 'string' || !changes.name.trim() || changes.name.length > 160)) throw new Error('Invalid project name');
+  if ('archived' in changes && typeof changes.archived !== 'boolean') throw new Error('Invalid archive state');
+  const name = changes.name === undefined ? current.name : changes.name.trim();
+  const archived = changes.archived === undefined ? current.archived_at : (changes.archived ? (current.archived_at || new Date().toISOString()) : null);
+  db.prepare('UPDATE projects SET name=?, archived_at=? WHERE id=?').run(name, archived, id);
+  return getProject(id);
+}
+export async function listProjectFolders(id) {
+  const db = await getDb(); if (!await getProject(id)) throw new Error('Project not found');
+  return db.prepare('SELECT id, project_id AS projectId, path, created_at AS createdAt FROM project_folders WHERE project_id=? ORDER BY created_at, id').all(id);
+}
+export async function linkProjectFolder(id, folder) {
+  const db = await getDb(); const project = await getProject(id); if (!project || project.archived_at) throw new Error('Project unavailable');
+  if (typeof folder !== 'string' || !path.isAbsolute(folder) || folder.length > 2048 || folder.includes('\0')) throw new Error('An absolute local folder is required');
+  let resolved; try { resolved = fs.realpathSync(folder); if (!fs.statSync(resolved).isDirectory()) throw new Error(); } catch { throw new Error('Folder is unavailable'); }
+  const folderId = randomUUID(), createdAt = new Date().toISOString();
+  try { db.prepare('INSERT INTO project_folders(id,project_id,path,created_at) VALUES(?,?,?,?)').run(folderId, id, resolved, createdAt); } catch (error) { if (String(error.message).includes('UNIQUE')) throw new Error('Folder is already linked'); throw error; }
+  return { id: folderId, projectId: id, path: resolved, createdAt };
 }

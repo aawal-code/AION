@@ -44,6 +44,7 @@ export async function initAssistantWorkspace() {
   setupTargetSelector();
   setupModeToggle();
   setupNewProjectButton();
+  setupProjectManagement();
   setupNewChatButton();
   setupFullscreenChat();
   setupSpeechRecognition();
@@ -184,7 +185,7 @@ export function renderProjectList() {
         <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
         </svg>
-        <span class="project-name-text">${escapeHtml(p.name)}</span>
+        <span class="project-name-text">${escapeHtml(p.name)}${p.archived_at ? ' (Archived)' : ''}</span>
       </button>
     `;
     })
@@ -207,6 +208,7 @@ export async function selectProject(projectId) {
   renderProjectList();
   updateProjectHeader();
   await loadProjectMessages(projectId);
+  await refreshProjectManagement();
 }
 
 /**
@@ -491,6 +493,24 @@ function setupNewProjectButton() {
     } catch (err) { error.textContent = err.message; error.hidden = false; }
     finally { submit.disabled = false; }
   });
+}
+
+async function refreshProjectManagement() {
+  const project = cachedProjects.find((item) => item.id === activeProjectId);
+  if (!project) return;
+  const name = document.getElementById('projectRename'); if (name) name.value = project.name;
+  const archive = document.getElementById('projectArchive'); if (archive) archive.textContent = project.archived_at ? 'Restore' : 'Archive';
+  const list = document.getElementById('projectFolders'); if (!list) return;
+  try { const res = await assistantFetch(`/api/assistant/projects/${encodeURIComponent(project.id)}/folders`); if (!res.ok) throw new Error('Unable to load folders'); const data = await res.json(); list.replaceChildren(...data.folders.map((folder) => { const item = document.createElement('li'); item.textContent = folder.path; return item; })); }
+  catch { list.textContent = 'Unable to load folders.'; }
+}
+function setupProjectManagement() {
+  const error = document.getElementById('projectManageError');
+  const run = async (url, method, body) => { error.hidden = true; try { const res = await assistantFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Unable to update project'); await loadProjects(); await refreshProjectManagement(); return true; } catch (err) { error.textContent = err.message; error.hidden = false; return false; } };
+  document.getElementById('projectManage')?.addEventListener('toggle', refreshProjectManagement);
+  document.getElementById('projectRenameForm')?.addEventListener('submit', (event) => { event.preventDefault(); run(`/api/assistant/projects/${encodeURIComponent(activeProjectId)}`, 'PATCH', { name: document.getElementById('projectRename').value }); });
+  document.getElementById('projectArchive')?.addEventListener('click', () => { const project = cachedProjects.find((item) => item.id === activeProjectId); if (project) run(`/api/assistant/projects/${encodeURIComponent(activeProjectId)}`, 'PATCH', { archived: !project.archived_at }); });
+  document.getElementById('projectFolderForm')?.addEventListener('submit', async (event) => { event.preventDefault(); if (await run(`/api/assistant/projects/${encodeURIComponent(activeProjectId)}/folders`, 'POST', { path: document.getElementById('projectFolderPath').value })) event.target.reset(); });
 }
 
 /**

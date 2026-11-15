@@ -45,6 +45,16 @@ test('Master spec §2/§5/§6: authenticated chat persists project-bound convers
   let response = await post('/api/assistant/projects', { name: 'Project One', pinned_context: 'Project one context' }, h); assert.equal(response.status, 201); const project = (await response.json()).project;
   response = await post('/api/assistant/projects', { name: 'Project One' }, h); assert.equal(response.status, 201); assert.notEqual((await response.json()).project.id, project.id);
   response = await post('/api/assistant/projects', { name: 'Project Two', pinned_context: 'Private other context' }, h); assert.equal(response.status, 201); const other = (await response.json()).project;
+  const folderPath = path.join(root, 'existing-folder'); fs.mkdirSync(folderPath); fs.writeFileSync(path.join(folderPath, 'keep.txt'), 'unchanged');
+  response = await post(`/api/assistant/projects/${project.id}/folders`, { path: folderPath }, { cookie: jar, origin, 'content-type': 'application/json' }); assert.equal(response.status, 403);
+  response = await post(`/api/assistant/projects/${project.id}/folders`, { path: folderPath }, h); assert.equal(response.status, 201);
+  response = await post(`/api/assistant/projects/${project.id}/folders`, { path: 'relative' }, h); assert.equal(response.status, 400);
+  assert.equal(fs.readFileSync(path.join(folderPath, 'keep.txt'), 'utf8'), 'unchanged');
+  response = await fetch(origin + `/api/assistant/projects/${project.id}`, { method: 'PATCH', headers: h, body: JSON.stringify({ name: 'Renamed project' }) }); assert.equal(response.status, 200);
+  response = await fetch(origin + `/api/assistant/projects/${project.id}`, { method: 'PATCH', headers: h, body: JSON.stringify({ archived: true }) }); assert.equal(response.status, 200);
+  response = await post('/api/assistant/chat', { projectId: project.id, runtimeMode: 'api', provider: 'openai', prompt: 'blocked' }, h); assert.equal(response.status, 409);
+  response = await fetch(origin + `/api/assistant/projects/${project.id}`, { method: 'PATCH', headers: h, body: JSON.stringify({ archived: false }) }); assert.equal(response.status, 200);
+  closeDb(); response = await fetch(origin + `/api/assistant/projects/${project.id}/folders`, { headers: { cookie: jar } }); assert.equal((await response.json()).folders[0].path, fs.realpathSync(folderPath));
   const chat = { projectId: project.id, runtimeMode: 'api', provider: 'openai', model: 'test-model', mode: 'ask' };
   response = await post('/api/assistant/chat', { ...chat, prompt: 'First message' }, h); assert.equal(response.status, 200); const first = await response.json();
   assert.equal(first.assistantMessage.content, 'Synthetic answer 1');

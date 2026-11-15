@@ -2,6 +2,7 @@ import {
   getProjects,
   getProject,
   createProject,
+  updateProject, listProjectFolders, linkProjectFolder,
   getSessions,
   getSession,
   createSession,
@@ -91,6 +92,21 @@ export async function handleAssistantRoutes(req, res, urlPath) {
     } catch (err) {
       return sendJson(res, 500, { status: 'error', error: err.message });
     }
+  }
+
+  if (projMatch && method === 'PATCH') {
+    try { const project = await updateProject(decodeURIComponent(projMatch[1]), await readJsonBody(req, 4096)); return project ? sendJson(res, 200, { status: 'ok', project }) : sendJson(res, 404, { status: 'error', error: 'Project not found' }); }
+    catch (error) { return sendJson(res, 400, { status: 'error', error: error.message }); }
+  }
+  const folderMatch = urlPath.match(/^\/api\/assistant\/projects\/([^/]+)\/folders$/);
+  if (folderMatch && method === 'GET') {
+    try { return sendJson(res, 200, { status: 'ok', folders: await listProjectFolders(decodeURIComponent(folderMatch[1])) }); }
+    catch (error) { return sendJson(res, 404, { status: 'error', error: error.message }); }
+  }
+  if (folderMatch && method === 'POST') {
+    if (req.aionAuth?.role !== 'owner') return sendJson(res, 403, { status: 'error', error: 'Owner approval is required to link a folder' });
+    try { const body = await readJsonBody(req, 4096); return sendJson(res, 201, { status: 'ok', folder: await linkProjectFolder(decodeURIComponent(folderMatch[1]), body.path) }); }
+    catch (error) { return sendJson(res, 400, { status: 'error', error: error.message }); }
   }
 
   // GET /api/assistant/projects/:id/sessions
@@ -186,6 +202,7 @@ export async function handleAssistantRoutes(req, res, urlPath) {
       if (prompt.length > 32000) return sendJson(res, 400, { status: 'error', error: 'Prompt is too long' });
       const project = await getProject(projectId);
       if (!project) return sendJson(res, 404, { status: 'error', error: 'Project not found' });
+      if (project.archived_at) return sendJson(res, 409, { status: 'error', error: 'Restore this project before starting a conversation' });
       let sessionId = clientSessionId;
       if (sessionId) {
         const session = await getSession(sessionId);

@@ -1026,6 +1026,20 @@
                 <!-- Dynamically populated: AION, etc. -->
               </div>
 
+              <details class="assistant-project-manage" id="projectManage">
+                <summary>Manage selected project</summary>
+                <form id="projectRenameForm" class="assistant-project-form">
+                  <label for="projectRename">Project name</label><input id="projectRename" class="modal-input" maxlength="160" required>
+                  <button type="submit" class="btn-secondary">Rename</button>
+                </form>
+                <button type="button" class="btn-secondary" id="projectArchive">Archive</button>
+                <form id="projectFolderForm" class="assistant-project-form">
+                  <label for="projectFolderPath">Link existing folder</label><input id="projectFolderPath" class="modal-input" placeholder="Absolute path" required>
+                  <button type="submit" class="btn-secondary">Link folder</button>
+                </form>
+                <p>Folders stay in place. Linking does not enable file access or sync.</p>
+                <ul id="projectFolders"></ul><p id="projectManageError" role="alert" hidden></p>
+              </details>
               <!-- Project Chats / Threads Rail -->
               <div class="assistant-threads-header" style="margin-top: 16px;">
                 <span class="assistant-projects-title">Chats</span>
