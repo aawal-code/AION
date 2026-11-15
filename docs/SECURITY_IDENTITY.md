@@ -28,6 +28,8 @@ An Owner can create a five-minute pairing invitation inside AION. The locally ge
 
 `data/security.sqlite` is a schema-versioned SQLite store with WAL, foreign keys, transactional owner/revocation/recovery changes, scoped desktop-bootstrap hashes, and append-only audit events. It stores public keys, role grants, hashes of opaque sessions/challenges, recovery-key verification material, and audit metadata—never raw device private keys, raw sessions, or recovery keys. On Windows, API credentials are DPAPI CurrentUser protected; legacy deterministic vault bytes are copied to `vault.legacy.enc` before a successful atomic migration.
 
+The transport identity is a separate ECDSA P-256 TLS certificate generated with `@peculiar/x509` and stored as a DPAPI-protected PKCS#8 bundle. Node's TLS implementation requires TLS 1.3 and mutual certificate verification. Certificates renew when fewer than 14 days remain. This certificate proves only possession of a transport key; it does not by itself authorize a host. A subsequent transport-binding protocol must verify its pinned fingerprint and a channel-bound Ed25519 proof against an Owner-approved AION device.
+
 Before an installed-data migration, copy `security.sqlite` and legacy `trusted-devices.json` to a user-controlled backup location and verify restoration in an isolated profile. Phase 2A deliberately does not delete or silently convert legacy device credentials; legacy PIN pairing is disabled.
 
 ## Current limits

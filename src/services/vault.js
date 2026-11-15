@@ -10,7 +10,7 @@ const VAULT_FILE = path.join(DATA_DIR, 'vault.enc');
 const LEGACY_BACKUP = path.join(DATA_DIR, 'vault.legacy.enc');
 const PROVIDER_ENV_MAP = { cerebras: ['CEREBRAS_API_KEY', 'AION_CEREBRAS_KEY'], openai: ['OPENAI_API_KEY', 'AION_OPENAI_KEY'], anthropic: ['ANTHROPIC_API_KEY', 'CLAUDE_API_KEY', 'AION_ANTHROPIC_KEY'], groq: ['GROQ_API_KEY', 'AION_GROQ_KEY'], gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'AION_GEMINI_KEY'], ollama: ['OLLAMA_HOST', 'OLLAMA_API_BASE'] };
 
-function protectedData(input, unprotect = false) {
+export function protectedData(input, unprotect = false) {
   const encoded = Buffer.from(input).toString('base64');
   if (process.platform === 'win32') {
     const operation = unprotect ? 'Unprotect' : 'Protect';
