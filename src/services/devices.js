@@ -9,7 +9,7 @@ import { getTrustedDevices } from './auth.js';
 
 const IS_WIN = process.platform === 'win32';
 const DATA_DIR = path.resolve('data');
-const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
+const DEVICES_FILE = process.env.AION_DEVICES_PATH || path.join(DATA_DIR, 'devices.json');
 
 /**
  * Classifies DMI / SMBIOS chassis integer into standard device type:
@@ -38,8 +38,9 @@ export function classifyChassis(chassisInt) {
  */
 export function loadRegistry() {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    const directory = path.dirname(DEVICES_FILE);
+    if (!fs.existsSync(directory)) {
+      fs.mkdirSync(directory, { recursive: true });
     }
     if (fs.existsSync(DEVICES_FILE)) {
       const raw = fs.readFileSync(DEVICES_FILE, 'utf8').trim();
@@ -56,9 +57,8 @@ export function loadRegistry() {
  */
 export function saveRegistry(registry) {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
+    const directory = path.dirname(DEVICES_FILE);
+    if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
     fs.writeFileSync(DEVICES_FILE, JSON.stringify(registry, null, 2), 'utf8');
   } catch (err) {
     logEvent('ERROR', `Failed writing devices.json: ${err.message}`);
@@ -82,7 +82,7 @@ function detectLocalChassis() {
     }
 
     const psCmd = '(Get-CimInstance Win32_SystemEnclosure -ErrorAction SilentlyContinue).ChassisTypes';
-    exec(`powershell -NoProfile -Command "${psCmd}"`, { timeout: 3000 }, (err, stdout) => {
+    exec(`powershell -NoProfile -Command "${psCmd}"`, { timeout: 3000, windowsHide: true }, (err, stdout) => {
       if (err || !stdout) return resolve('desktop');
       const match = stdout.match(/\d+/);
       const chassisCode = match ? match[0] : 3;
@@ -118,7 +118,7 @@ function getLocalNetworkDetails() {
  */
 function queryTailscalePeers() {
   return new Promise((resolve) => {
-    exec('tailscale status --json', { timeout: 2500 }, (err, stdout) => {
+    exec('tailscale status --json', { timeout: 2500, windowsHide: true }, (err, stdout) => {
       if (err || !stdout) return resolve({ self: null, peers: [] });
 
       try {

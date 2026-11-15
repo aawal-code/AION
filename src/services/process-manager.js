@@ -242,7 +242,7 @@ export function getGroupedApps(options = { computeDelta: true }) {
       `.trim().replace(/\s+/g, ' ');
 
       const cmd = `powershell -NoProfile -Command "${script}"`;
-      exec(cmd, { timeout: 8000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+      exec(cmd, { timeout: 8000, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
         if (err || !stdout || !stdout.trim()) {
           logEvent('WARN', `Windows apps query error: ${err?.message || 'Empty stdout'}`);
           return resolve([]);

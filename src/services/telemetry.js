@@ -393,7 +393,7 @@ export function getDiskTelemetry() {
 
     if (isWin) {
       const psCmd = 'powershell -NoProfile -Command "(Get-CimInstance Win32_PerfFormattedData_PerfDisk_PhysicalDisk -Filter \\"Name=\'_Total\'\\") | Select-Object DiskReadBytesPerSec, DiskWriteBytesPerSec, PercentDiskTime | ConvertTo-Json -Compress"';
-      exec(psCmd, { timeout: 3000 }, (err, stdout) => {
+      exec(psCmd, { timeout: 3000, windowsHide: true }, (err, stdout) => {
         let readBytesPerSec = 0;
         let writeBytesPerSec = 0;
         let percentDiskTime = 0;

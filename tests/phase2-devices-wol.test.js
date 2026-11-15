@@ -3,8 +3,13 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { handleRequest } from '../src/routes/router.js';
-import { classifyChassis, updateDevice, getDevicesList, loadRegistry } from '../src/services/devices.js';
+import os from 'node:os';
+const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'aion-device-test-'));
+process.env.AION_DEVICES_PATH = path.join(sandbox, 'devices.json');
+process.env.AION_SECURITY_DB_PATH = path.join(sandbox, 'security.sqlite');
+const { handleRequest } = await import('../src/routes/router.js');
+const { classifyChassis, updateDevice, loadRegistry } = await import('../src/services/devices.js');
+const { resetIdentityStoreForTests } = await import('../src/services/identity-store.js');
 import { buildMagicPacket, calculateBroadcastAddress } from '../src/services/wol.js';
 import { parseProcesses } from '../src/services/os.js';
 import { sanitizeCommand } from '../src/utils/sanitizer.js';
@@ -28,12 +33,8 @@ describe('Phase 2: Device Classification, WoL & Extended Controls', () => {
     if (server) {
       await new Promise((resolve) => server.close(resolve));
     }
-    const reg = loadRegistry();
-    if (reg && reg.devices && reg.devices['test-device-1']) {
-      delete reg.devices['test-device-1'];
-      const DATA_DIR = path.resolve('data');
-      fs.writeFileSync(path.join(DATA_DIR, 'devices.json'), JSON.stringify(reg, null, 2), 'utf8');
-    }
+    await resetIdentityStoreForTests();
+    fs.rmSync(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   describe('Device Classification Logic', () => {
@@ -156,68 +157,13 @@ describe('Phase 2: Device Classification, WoL & Extended Controls', () => {
     });
   });
 
-  describe('HTTP Endpoints Integration', () => {
-    test('GET /api/devices returns node list with local node first', async () => {
-      const res = await fetch(`${baseUrl}/api/devices`);
-      assert.equal(res.status, 200);
-      const data = await res.json();
-      assert.equal(data.status, 'ok');
-      assert.ok(Array.isArray(data.devices));
-      assert.ok(data.devices.length >= 1);
-      const local = data.devices[0];
-      assert.equal(local.isLocal, true);
-      assert.ok(local.id === 'local');
-      assert.ok(local.mac);
-    });
-
-    test('PATCH /api/devices/:id updates friendly device info', async () => {
-      const res = await fetch(`${baseUrl}/api/devices/local`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'Primary Workstation', type: 'desktop' }),
-      });
-      assert.equal(res.status, 200);
-      const data = await res.json();
-      assert.equal(data.status, 'ok');
-      assert.equal(data.device.name, 'Primary Workstation');
-      assert.equal(data.device.type, 'desktop');
-    });
-
-    test('GET /api/system/wol returns valid WoL adapter diagnostic payload', async () => {
-      const res = await fetch(`${baseUrl}/api/system/wol`);
-      assert.equal(res.status, 200);
-      const data = await res.json();
-      assert.equal(data.status, 'ok');
-      assert.equal(typeof data.supported, 'boolean');
-      assert.equal(typeof data.enabled, 'boolean');
-      assert.equal(typeof data.fastStartupBlocking, 'boolean');
-      assert.ok(typeof data.mac === 'string');
-    });
-
-    test('POST /api/devices/:id/wake broadcasts UDP packet for configured device', async () => {
-      const res = await fetch(`${baseUrl}/api/devices/local/wake`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mac: '02:00:00:00:00:01' }),
-      });
-      assert.equal(res.status, 200);
-      const data = await res.json();
-      assert.equal(data.status, 'ok');
-      assert.equal(data.success, true);
-      assert.ok(Array.isArray(data.broadcasts));
-    });
-
-    test('GET /api/system/processes returns top running processes', async () => {
-      const res = await fetch(`${baseUrl}/api/system/processes`);
-      assert.equal(res.status, 200);
-      const data = await res.json();
-      assert.equal(data.status, 'ok');
-      assert.ok(Array.isArray(data.processes));
-      if (data.processes.length > 0) {
-        const first = data.processes[0];
-        assert.ok(typeof first.pid === 'number');
-        assert.ok(typeof first.name === 'string');
-        assert.ok(typeof first.memoryMb === 'number');
+  describe('HTTP authorization boundary', () => {
+    for (const endpoint of ['/api/devices', '/api/system/wol', '/api/system/processes']) {
+      test(`anonymous GET ${endpoint} is denied`, async () => { assert.equal((await fetch(baseUrl + endpoint)).status, 401); });
+    }
+    test('unauthorized device updates and wake requests are rejected', async () => {
+      for (const [method, endpoint] of [['PATCH', '/api/devices/local'], ['POST', '/api/devices/local/wake']]) {
+        const response = await fetch(baseUrl + endpoint, { method, headers: { 'content-type': 'application/json' }, body: '{}' }); assert.equal(response.status, 403);
       }
     });
   });

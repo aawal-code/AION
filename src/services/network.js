@@ -119,7 +119,7 @@ export function getMeshStatus(timeoutMs = 3000) {
   }
 
   return new Promise((resolve) => {
-    exec('tailscale status --json', { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+    exec('tailscale status --json', { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
       const lanIp = getLocalLanIp();
       let result;
       if (err || !stdout || !stdout.trim()) {

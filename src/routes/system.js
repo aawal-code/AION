@@ -270,7 +270,7 @@ export function probeBinary(binaryName) {
     }
     const isWin = process.platform === 'win32';
     const cmd = isWin ? 'where.exe' : 'which';
-    execFile(cmd, [binaryName], { timeout: 3000 }, (error, stdout) => {
+    execFile(cmd, [binaryName], { timeout: 3000, windowsHide: true }, (error, stdout) => {
       if (error || !stdout) {
         return resolve({ installed: false, path: null });
       }

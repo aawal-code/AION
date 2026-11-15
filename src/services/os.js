@@ -369,7 +369,7 @@ export function getRunningProcesses() {
   return new Promise((resolve) => {
     if (IS_WIN) {
       const cmd = 'powershell -NoProfile -Command "Get-Process | Where-Object { $_.MainWindowTitle -ne \'\' -or ($_.WorkingSet64 -gt 35MB -and $_.SessionId -ne 0) } | Select-Object Id, ProcessName, MainWindowTitle, WorkingSet64 | ConvertTo-Json -Compress"';
-      exec(cmd, { timeout: 6000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      exec(cmd, { timeout: 6000, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
         if (err || !stdout) {
           logEvent('WARN', `Process query error: ${err?.message || 'Empty response'}`);
           return resolve([]);
