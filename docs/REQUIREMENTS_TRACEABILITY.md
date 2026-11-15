@@ -36,6 +36,7 @@
 | 6 | Durable task model, selected host, restart-safe execution | Missing | No task-orchestrator persistence | No task/reconciliation tests. |
 | 6 | Parallel-agent coordination and validated integration | Missing | No worker isolation or coordination service | No tests. |
 | 7 | Secure all-host two-way sync with durable manifests/conflicts/retention | Partial | `src/services/replication-store.js` | `tests/replication-store.test.js`; local event identities, acknowledgements, idempotency, and revision conflicts persist transactionally. No transport, file transfer, tombstones, or retention workflow exists. |
+| 2, 7 | Authenticated file transfer and filesystem containment | Blocked / disabled | `src/services/file-sync.js`, `src/services/host-transport.js` | No production route starts the host transport or exposes file sync. File operations and inbound file events fail closed. Existing path-based checks cannot prevent concurrent directory or junction replacement; a Windows handle-relative backend with safe root binding, temporary creation, atomic install and crash cleanup is required. `tests/file-sync-fail-closed.test.js` verifies the guard. The transfer implementation and its acceptance tests are retained as an incomplete checkpoint. |
 | 7 | Five-minute/event-driven sync and safe file exclusions/indexing separation | Missing | Legacy UI routes only | No tests; must not be inferred from Syncthing status UI. |
 | 8 | Declarative, approved, durable automations | Missing | No automation engine | No tests. |
 | 9 | Weekly verified backups and guided non-destructive restore | Missing | No backup service | No tests. |
@@ -61,3 +62,7 @@
 ## Known documentation conflict resolved by this matrix
 
 `docs/SECURITY_IDENTITY.md` previously said DPAPI vault work was future work, while the current `src/services/vault.js`, tests, and Phase 2A report show a synthetic DPAPI migration implementation. The security document must be updated in the same milestone; synthetic coverage does not establish installed-data or cross-user migration success.
+
+## Disabled file-transfer test cases
+
+The file-sync guard deliberately blocks these four cases until handle-based containment is implemented: `tests/chunked-file-transfer.integration.test.js` (authenticated transfer), `tests/chunked-file-transfer.test.js` (corrupt chunk/full-file verification and legacy small-file events), and `tests/file-sync.integration.test.js` (small-file host transfer). Their expected failures do not establish transfer safety. The separate path-rejection case currently stops at the guard and is not evidence against directory-swap races.

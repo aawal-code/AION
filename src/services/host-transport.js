@@ -1,10 +1,11 @@
 import tls from 'node:tls';
 import { EventEmitter } from 'node:events';
-import { X509Certificate, createHash } from 'node:crypto';
+import { X509Certificate, createHash, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import { authorizeTransportPeer, isTransportPeerAuthorized, listApprovedTransportCertificates } from './identity-store.js';
 import { applyInboundEvent, acknowledgeOutboundEvent, listOutboundEvents } from './replication-store.js';
 import { getTransportIdentity } from './transport-identity.js';
-import { applyFileEvent } from './file-sync.js';
+import { requireSafeFilesystem, applyFileEvent, beginFileTransfer, writeFileChunk, finishFileTransfer, discardFileTransfer, openFileForTransfer, CHUNK_SIZE } from './file-sync.js';
 
 const MAX_FRAME = 64 * 1024;
 const AUTH_TIMEOUT_MS = 10_000;
@@ -27,11 +28,11 @@ function validateEvent(event) {
 
 export class SecureConnection extends EventEmitter {
   constructor(socket, { localDeviceId, expectedPeerFingerprint = null }) {
-    super(); this.socket = socket; this.localDeviceId = localDeviceId; this.expectedPeerFingerprint = expectedPeerFingerprint; this.context = null; this.pending = new Map(); this.header = Buffer.alloc(4); this.headerBytes = 0; this.body = null; this.bodyBytes = 0; this.writeQueue = Promise.resolve(); this.authenticated = false;
+    super(); this.socket = socket; this.localDeviceId = localDeviceId; this.expectedPeerFingerprint = expectedPeerFingerprint; this.context = null; this.pending = new Map(); this.header = Buffer.alloc(4); this.headerBytes = 0; this.body = null; this.bodyBytes = 0; this.writeQueue = Promise.resolve(); this.incomingFile = null; this.filePending = null; this.sendingFile = false; this.authenticated = false;
     socket.setTimeout(AUTH_TIMEOUT_MS, () => fail(socket, 'Transport authentication timed out'));
     socket.on('data', (chunk) => { socket.pause(); this.consume(chunk).then(() => { if (!socket.destroyed) socket.resume(); }, (error) => fail(socket, error.message)); });
     socket.on('error', (error) => this.rejectPending(error));
-    socket.on('close', () => { this.rejectPending(new Error('Transport connection closed')); this.emit('close'); });
+    socket.on('close', () => { this.rejectPending(new Error('Transport connection closed')); if (this.filePending) this.filePending.reject(new Error('Transport connection closed')); discardFileTransfer(this.incomingFile); this.incomingFile = null; this.emit('close'); });
   }
   rejectPending(error) { for (const pending of this.pending.values()) pending.reject(error); this.pending.clear(); }
   send(message) {
@@ -89,16 +90,66 @@ export class SecureConnection extends EventEmitter {
     // The exporter-bound proof is verified at connection authentication. Each
     // protected frame rechecks persistent revocation and capability state.
     if (!await isTransportPeerAuthorized({ deviceId: this.context.deviceId, certificate })) throw new Error('Peer authorization was revoked');
-    if (message.type === 'event') { validateEvent(message.event); const result = await applyInboundEvent(message.event); if (result.status === 'applied') await applyFileEvent(message.event); await this.send({ type: 'ack', eventId: message.event.eventId, status: result.status }); return; }
+    if (this.socket.destroyed) throw new Error('Transport connection closed');
+    if (message.type === 'file-ack') {
+      const pending = this.filePending;
+      if (!pending || message.id !== pending.id || message.phase !== pending.phase || message.index !== pending.index) throw new Error('Unexpected file acknowledgement');
+      this.filePending = null; pending.resolve(); return;
+    }
+    if (message.type === 'file-begin') {
+      if (this.incomingFile || typeof message.id !== 'string' || !/^[a-f0-9-]{36}$/.test(message.id)) throw new Error('Invalid file transfer');
+      this.incomingFile = beginFileTransfer(message.metadata); this.incomingFile.id = message.id;
+      await this.send({ type: 'file-ack', id: message.id, phase: 'begin', index: 0 }); return;
+    }
+    if (message.type === 'file-chunk') {
+      if (!this.incomingFile || message.id !== this.incomingFile.id) throw new Error('Unknown file transfer');
+      writeFileChunk(this.incomingFile, message);
+      await this.send({ type: 'file-ack', id: message.id, phase: 'chunk', index: message.index }); return;
+    }
+    if (message.type === 'file-complete') {
+      if (!this.incomingFile || message.id !== this.incomingFile.id) throw new Error('Unknown file transfer');
+      finishFileTransfer(this.incomingFile); this.incomingFile = null;
+      await this.send({ type: 'file-ack', id: message.id, phase: 'complete', index: 0 }); return;
+    }
+    if (message.type === 'event') { validateEvent(message.event); if (['file-content', 'file-transfer'].includes(message.event.recordType)) requireSafeFilesystem(); const result = await applyInboundEvent(message.event); if (result.status === 'applied') await applyFileEvent(message.event); await this.send({ type: 'ack', eventId: message.event.eventId, status: result.status }); return; }
     if (message.type === 'ack') { const pending = this.pending.get(message.eventId); if (pending) { this.pending.delete(message.eventId); pending.resolve(message.status); } return; }
     throw new Error('Unsupported transport message');
+  }
+  async fileRequest(message, phase, index = 0) {
+    if (this.filePending) throw new Error('A file request is already pending');
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.filePending = null; reject(new Error('File acknowledgement timed out')); }, AUTH_TIMEOUT_MS);
+      const finish = (callback, value) => { clearTimeout(timer); callback(value); };
+      this.filePending = { id: message.id, phase, index, resolve: () => finish(resolve), reject: (error) => { this.filePending = null; finish(reject, error); } };
+      this.send(message).catch((error) => { if (this.filePending?.id === message.id) this.filePending.reject(error); });
+    });
+  }
+  async sendFile(metadata) {
+    if (!this.authenticated || this.sendingFile) throw new Error('File transfer unavailable');
+    this.sendingFile = true; let fd;
+    try {
+      fd = openFileForTransfer(metadata); const id = randomUUID();
+      await this.fileRequest({ type: 'file-begin', id, metadata }, 'begin');
+      const buffer = Buffer.allocUnsafe(CHUNK_SIZE); const digest = createHash('sha256'); let total = 0, index = 0;
+      while (total < metadata.size) {
+        const wanted = Math.min(buffer.length, metadata.size - total); let count = 0;
+        while (count < wanted) { const n = fs.readSync(fd, buffer, count, wanted - count, null); if (!n) throw new Error('Source file changed'); count += n; }
+        const bytes = buffer.subarray(0, count); digest.update(bytes); total += count;
+        await this.fileRequest({ type: 'file-chunk', id, index, data: bytes.toString('base64'), sha256: createHash('sha256').update(bytes).digest('hex') }, 'chunk', index); index++;
+      }
+      if (fs.fstatSync(fd).size !== metadata.size || digest.digest('hex') !== metadata.sha256) throw new Error('Source file changed during transfer');
+      await this.fileRequest({ type: 'file-complete', id }, 'complete');
+    } catch (error) { this.socket.destroy(); throw error; }
+    finally { if (fd !== undefined) fs.closeSync(fd); this.sendingFile = false; }
   }
   async deliverPending() {
     if (!this.authenticated) throw new Error('Transport is not authenticated');
     const events = await listOutboundEvents(100);
     for (const event of events) {
       const status = await new Promise((resolve, reject) => { const timer = setTimeout(() => { this.pending.delete(event.eventId); reject(new Error('Replication acknowledgement timed out')); }, AUTH_TIMEOUT_MS); this.pending.set(event.eventId, { resolve: (value) => { clearTimeout(timer); resolve(value); }, reject: (error) => { clearTimeout(timer); reject(error); } }); this.send({ type: 'event', event }).catch((error) => { const pending = this.pending.get(event.eventId); if (pending) { this.pending.delete(event.eventId); pending.reject(error); } }); });
-      if (['applied', 'duplicate', 'conflict'].includes(status)) await acknowledgeOutboundEvent(event.eventId); else throw new Error('Invalid replication acknowledgement');
+      if (!['applied', 'duplicate', 'conflict'].includes(status)) throw new Error('Invalid replication acknowledgement');
+      if (event.recordType === 'file-transfer' && status !== 'conflict') await this.sendFile(event.payload);
+      await acknowledgeOutboundEvent(event.eventId);
     }
     return events.length;
   }

@@ -10,12 +10,15 @@ function ownerKey() { return crypto.generateKeyPairSync('ed25519').publicKey.exp
 async function command(message) {
   if (message.type === 'init') { identity = await getTransportIdentity(message.name); owner = await enrollInitialOwner({ name: `${message.name} owner`, publicKey: ownerKey() }); return { certificate: identity.certificate, publicKey: identity.devicePublicKey, binding: identity.signCertificateBinding(), owner }; }
   if (message.type === 'resume') { identity = await getTransportIdentity(message.name); const status = await getIdentityStatus(); if (!status.owner) throw new Error('Host has no Owner to resume'); owner = { deviceId: status.owner.id, role: 'owner' }; return { certificate: identity.certificate, publicKey: identity.devicePublicKey, binding: identity.signCertificateBinding(), owner }; }
-  if (message.type === 'pair') { const invitation = await createPairingInvitation(owner); await claimPairingInvitation({ invitationId: invitation.invitationId, name: message.peerName, publicKey: message.publicKey, transportCertificate: message.certificate, transportBindingSignature: message.binding }); return approvePairingInvitation({ invitationId: invitation.invitationId, verificationCode: invitation.verificationCode, role: 'trusted', capabilities: ['sync:replicate'] }, owner); }
+  if (message.type === 'pair') { const invitation = await createPairingInvitation(owner); await claimPairingInvitation({ invitationId: invitation.invitationId, name: message.peerName, publicKey: message.publicKey, transportCertificate: message.certificate, transportBindingSignature: message.binding }); return approvePairingInvitation({ invitationId: invitation.invitationId, verificationCode: invitation.verificationCode, role: message.role || 'trusted', capabilities: message.capabilities ?? ['sync:replicate'] }, owner); }
   if (message.type === 'start') { listener = await startHostTransport({ port: 0, localDeviceId: message.localDeviceId, hostId: message.name }); return { port: listener.port }; }
   if (message.type === 'event') return createReplicationEvent(message.event);
   if (message.type === 'link') return linkSyncFolder(message.projectId, message.folder);
   if (message.type === 'queueFile') return queueFile(message.projectId, message.relative);
   if (message.type === 'deliver') { connection = await connectHostTransport({ port: message.port, localDeviceId: message.localDeviceId, expectedPeerCertificate: message.certificate, hostId: message.name }); const delivered = await connection.deliverPending(); connection.close(); connection = null; return { delivered }; }
+  if (message.type === 'connect') { connection = await connectHostTransport({ port: message.port, localDeviceId: message.localDeviceId, expectedPeerCertificate: message.certificate, hostId: message.name }); return { connected: true }; }
+  if (message.type === 'fileRequest') { await connection.fileRequest(message.frame, message.phase, message.index || 0); return { accepted: true }; }
+  if (message.type === 'disconnect') { connection.socket.destroy(); connection = null; return { disconnected: true }; }
   if (message.type === 'pending') return { count: (await listOutboundEvents()).length };
   if (message.type === 'heads') return listRecordHeads();
   if (message.type === 'history') return listRecordHistory(message.recordId);
