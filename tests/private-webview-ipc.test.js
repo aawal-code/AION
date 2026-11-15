@@ -33,7 +33,7 @@ test('Master spec §1/§2: real WebView2 private page uses child IPC and blocks 
     assert.match(stdout, /WEBVIEW_OWNER_OK/);
     assert.match(stdout, /WEBVIEW_MUTATION_BLOCKED/);
     if (mode !== 'crash') assert.match(stdout, /WEBVIEW_DISCONNECTED/);
-    assert.ok((stdout.match(/NETWORK_BLOCKED/g) || []).length >= 2, 'page and worker loopback requests were intercepted');
+    for (const probe of ['/probe', '/worker', '/service-worker']) assert.ok(stdout.includes(`NETWORK_BLOCKED ${probe}\n`) || stdout.includes(`NETWORK_BLOCKED ${probe}\r\n`), `${probe} loopback request was intercepted`);
     if (mode === 'disconnect') assert.match(stdout, /BACKEND_ALIVE/);
     await new Promise(resolve => setTimeout(resolve, 2000));
     if (mode === 'crash') {

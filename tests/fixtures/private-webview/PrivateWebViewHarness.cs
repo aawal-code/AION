@@ -66,9 +66,18 @@ internal sealed class PrivateWebViewHarness : Form
                     });
                     fetch('http://127.0.0.1:PORT/probe').catch(() => {});
                     const worker = new Worker(URL.createObjectURL(new Blob([`fetch('http://127.0.0.1:PORT/worker').finally(() => postMessage('done'))`], {type:'text/javascript'})));
+                    const serviceWorkerProbe = (async () => {
+                        const registration = await navigator.serviceWorker.register('/probe-sw.js', {scope:'/probe/'});
+                        const active = registration.active || await new Promise(resolve => {
+                            const candidate = registration.installing || registration.waiting;
+                            candidate.addEventListener('statechange', () => { if (candidate.state === 'activated') resolve(candidate); });
+                        });
+                        const done = new Promise(resolve => navigator.serviceWorker.addEventListener('message', resolve, {once:true}));
+                        active.postMessage('probe'); await done;
+                    })();
                     setTimeout(() => fetch('http://127.0.0.1:PORT/after-close').catch(() => {}), 1500);
-                    Promise.all([new Promise(resolve => { worker.onmessage = resolve; }), fetch('/api/auth/devices').then(r => r.json()),
-                        fetch('/api/auth/recovery/rotate', {method:'POST', body:'{}'}).then(r => r.status)]).then(([_worker, value, status]) => {
+                    Promise.all([new Promise(resolve => { worker.onmessage = resolve; }), serviceWorkerProbe, fetch('/api/auth/devices').then(r => r.json()),
+                        fetch('/api/auth/recovery/rotate', {method:'POST', body:'{}'}).then(r => r.status)]).then(([_worker, _serviceWorker, value, status]) => {
                         if (status === 403 && value.status === 'ok' && value.devices.some(d => d.role === 'owner')) window.chrome.webview.postMessage('RESULT_OK');
                     });
                 })();".Replace("PORT", probePort.ToString());
@@ -81,6 +90,11 @@ internal sealed class PrivateWebViewHarness : Form
 
     private async void Resource(object sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
+        if (e.Request.Uri == "https://aion-private.invalid/probe-sw.js" && e.Request.Method == "GET")
+        {
+            string code = "self.addEventListener('message',e=>{fetch('http://127.0.0.1:" + probePort + "/service-worker').finally(()=>e.source.postMessage('done'))})";
+            e.Response = view.CoreWebView2.Environment.CreateWebResourceResponse(new MemoryStream(Encoding.UTF8.GetBytes(code)), 200, "OK", "Content-Type: text/javascript\r\nCache-Control: no-store\r\n"); return;
+        }
         if (e.Request.Uri == "https://aion-private.invalid/api/auth/devices" && e.Request.Method == "GET")
         {
             var deferral = e.GetDeferral();
@@ -117,7 +131,7 @@ internal sealed class PrivateWebViewHarness : Form
             }
         }
         catch { }
-        if (e.Request.Uri.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase)) Console.WriteLine("NETWORK_BLOCKED");
+        if (e.Request.Uri.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase)) Console.WriteLine("NETWORK_BLOCKED " + new Uri(e.Request.Uri).AbsolutePath);
         e.Response = view.CoreWebView2.Environment.CreateWebResourceResponse(new MemoryStream(new byte[0]), 403, "Blocked", "Cache-Control: no-store\r\n");
     }
 
