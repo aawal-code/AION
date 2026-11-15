@@ -1,0 +1,9 @@
+# Native IPC framing milestone
+
+`src/services/native-ipc-channel.js` provides bounded framing and serialized dispatch over streams supplied by its caller. It is **not connected to the production desktop shell or the HTTP server**, does not authenticate a peer, and does not authorize any API operation. The caller must establish process-bound pipes, verify operation identity and capabilities, and own the child process lifetime.
+
+Messages use a four-byte big-endian length followed by UTF-8 JSON, with a 64 KiB frame limit and at most 16 outstanding requests. Requests carry a unique in-flight ID and a constrained method name. Cancellation aborts the operation's signal; handlers must honor it. Responses are serialized and respect stream backpressure. A dispatch or response-write timeout closes the entire channel, because the action may have an uncertain outcome and must not be retried automatically. A malformed frame, duplicate in-flight ID, queue overflow, or pipe closure also fails closed.
+
+`tests/native-ipc-channel.test.js` checks fragmentation, coalescing, bounds, cancellation, output backpressure, timeout, and an actual inherited-pipe child. This test does not demonstrate production integration, existing Owner migration, WebView2 routing, or recovery from an uncertain side effect. The existing native bootstrap race remains a release blocker.
+
+`scripts/win/NativeIpcClient.cs` is a matching standalone C# framing client. Its test compiles a separate Windows executable and exchanges requests with the Node child, including cancellation, deadline closure, and rejection of oversized or mismatched responses. It is not yet compiled into or used by AION.exe. Integration must add child-process ownership, a restricted dispatcher, authenticated sessions, origin and CSRF handling, and verified migration before the production path can use it.
