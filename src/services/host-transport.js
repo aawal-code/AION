@@ -4,6 +4,7 @@ import { X509Certificate, createHash } from 'node:crypto';
 import { authorizeTransportPeer, isTransportPeerAuthorized, listApprovedTransportCertificates } from './identity-store.js';
 import { applyInboundEvent, acknowledgeOutboundEvent, listOutboundEvents } from './replication-store.js';
 import { getTransportIdentity } from './transport-identity.js';
+import { applyFileEvent } from './file-sync.js';
 
 const MAX_FRAME = 64 * 1024;
 const MAX_BUFFER = MAX_FRAME + 4;
@@ -65,7 +66,7 @@ class SecureConnection extends EventEmitter {
     // The exporter-bound proof is verified at connection authentication. Each
     // protected frame rechecks persistent revocation and capability state.
     if (!await isTransportPeerAuthorized({ deviceId: this.context.deviceId, certificate })) throw new Error('Peer authorization was revoked');
-    if (message.type === 'event') { validateEvent(message.event); const result = await applyInboundEvent(message.event); this.send({ type: 'ack', eventId: message.event.eventId, status: result.status }); return; }
+    if (message.type === 'event') { validateEvent(message.event); const result = await applyInboundEvent(message.event); if (result.status === 'applied') await applyFileEvent(message.event); this.send({ type: 'ack', eventId: message.event.eventId, status: result.status }); return; }
     if (message.type === 'ack') { const pending = this.pending.get(message.eventId); if (pending) { this.pending.delete(message.eventId); pending.resolve(message.status); } return; }
     throw new Error('Unsupported transport message');
   }
