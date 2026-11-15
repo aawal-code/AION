@@ -40,6 +40,7 @@ import { initNav } from './nav.js';
 import { initSettings, openSettings } from './settings.js';
 import { initScreenControl } from './screen-control.js';
 import { initAssistantWorkspace, sendAssistantPrompt } from './assistant.js';
+import { initHome } from './home.js';
 
 // ==========================================================================
 // Service Worker Live Controller Reload (Mobile / Desktop PWA Auto-Refresh)
@@ -1535,6 +1536,7 @@ if (typeof document !== 'undefined') {
 
     // 10. Assistant Workspace & BYOCLI CLI Bridge (Milestone 6)
     initAssistantWorkspace();
+    initHome();
 
     // 11. Re-render devices on language change
     window.addEventListener('aion:languagechange', () => {

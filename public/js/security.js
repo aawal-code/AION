@@ -5,6 +5,7 @@ const encoder = new TextEncoder();
 const dbName = 'aion-security-keys';
 const storeName = 'keys';
 let recoveryVisible = false;
+let keyPairPromise = null;
 
 const element = (id) => document.getElementById(id);
 const cookie = (name) => document.cookie.split('; ').find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1) || '';
@@ -14,11 +15,16 @@ const request = async (url, options = {}) => {
   if (!response.ok) throw new Error(data.error || 'Security operation failed'); return data;
 };
 function database() { return new Promise((resolve, reject) => { const open = indexedDB.open(dbName, 1); open.onupgradeneeded = () => open.result.createObjectStore(storeName); open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error); }); }
-async function keyPair() {
-  const db = await database(); const existing = await new Promise((resolve, reject) => { const tx = db.transaction(storeName, 'readonly'); const get = tx.objectStore(storeName).get('owner'); get.onsuccess = () => resolve(get.result); get.onerror = () => reject(get.error); });
-  if (existing) return existing;
-  const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify']);
-  await new Promise((resolve, reject) => { const tx = db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).put(pair, 'owner'); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); return pair;
+function keyPair() {
+  if (keyPairPromise) return keyPairPromise;
+  keyPairPromise = (async () => {
+    const db = await database();
+    const existing = await new Promise((resolve, reject) => { const tx = db.transaction(storeName, 'readonly'); const get = tx.objectStore(storeName).get('owner'); get.onsuccess = () => resolve(get.result); get.onerror = () => reject(get.error); });
+    if (existing) return existing;
+    const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify']);
+    await new Promise((resolve, reject) => { const tx = db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).put(pair, 'owner'); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); return pair;
+  })().catch((error) => { keyPairPromise = null; throw error; });
+  return keyPairPromise;
 }
 async function ownerPublicKey() { const pair = await keyPair(); const raw = await crypto.subtle.exportKey('spki', pair.publicKey); const text = btoa(String.fromCharCode(...new Uint8Array(raw))); return `-----BEGIN PUBLIC KEY-----\n${text.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`; }
 async function authenticateOwner(deviceId) { const pair = await keyPair(); const challenge = await request('/api/auth/challenge', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId }) }); const signature = await crypto.subtle.sign({ name: 'Ed25519' }, pair.privateKey, encoder.encode(challenge.signingPayload)); await request('/api/auth/authenticate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.challengeId, signature: btoa(String.fromCharCode(...new Uint8Array(signature))).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '') }) }); window.dispatchEvent(new Event('aion:authenticated')); }
@@ -43,8 +49,8 @@ export async function loadSecurityPanel() {
   } catch (error) { element('securityStatus').textContent = `${error.message} Check that the desktop host is running and try again.`; }
 }
 export function initSecurity() {
-  element('btnSecurityEnroll')?.addEventListener('click', async () => { try { const result = await request('/api/auth/enroll-owner', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ name: element('securityOwnerName').value, publicKey: await ownerPublicKey() }) }); recoveryKey(result.recoveryKey); await authenticateOwner(result.deviceId); showToast('Owner identity created. Save the recovery key before continuing.'); } catch (error) { showToast(error.message, 'alert'); } });
-  element('btnSecurityRecover')?.addEventListener('click', async () => { try { const result = await request('/api/auth/recover-owner', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ recoveryKey: element('securityRecoveryKey').value, name: element('securityRecoveryName').value, publicKey: await ownerPublicKey() }) }); recoveryKey(result.recoveryKey); await authenticateOwner(result.deviceId); showToast('Owner access recovered. Save the replacement recovery key.'); } catch (error) { showToast(error.message, 'alert'); } });
+  element('btnSecurityEnroll')?.addEventListener('click', async () => { try { const result = await request('/api/auth/enroll-owner', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ name: element('securityOwnerName').value, publicKey: await ownerPublicKey() }) }); recoveryKey(result.recoveryKey); await authenticateOwner(result.deviceId); await loadSecurityPanel(); showToast('Owner identity created. Save the recovery key before continuing.'); } catch (error) { showToast(error.message, 'alert'); } });
+  element('btnSecurityRecover')?.addEventListener('click', async () => { try { const result = await request('/api/auth/recover-owner', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ recoveryKey: element('securityRecoveryKey').value, name: element('securityRecoveryName').value, publicKey: await ownerPublicKey() }) }); recoveryKey(result.recoveryKey); await authenticateOwner(result.deviceId); await loadSecurityPanel(); showToast('Owner access recovered. Save the replacement recovery key.'); } catch (error) { showToast(error.message, 'alert'); } });
   element('btnSecurityRotateRecovery')?.addEventListener('click', async () => { try { recoveryKey((await request('/api/auth/recovery/rotate', { method: 'POST', headers: csrfHeaders(), body: '{}' })).recoveryKey); } catch (error) { showToast(error.message, 'alert'); } });
   element('btnSecurityEnrollDevice')?.addEventListener('click', async () => { try { await request('/api/auth/enroll-device', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ name: element('securityDeviceName').value, role: element('securityDeviceRole').value, publicKey: element('securityDeviceKey').value }) }); element('securityDeviceKey').value = ''; showToast('Device approved.'); await loadSecurityPanel(); } catch (error) { showToast(error.message, 'alert'); } });
   element('btnSecurityCreatePairing')?.addEventListener('click', async () => { try { const invitation = await request('/api/auth/pairing/invitations', { method: 'POST', headers: csrfHeaders(), body: '{}' }); element('securityPairingQr').innerHTML = generateQrSvg(invitation.qrPayload, 180); element('securityPairingCode').textContent = invitation.verificationCode; element('securityPairingExpiry').textContent = `Expires ${new Date(invitation.expiresAt).toLocaleTimeString()}. Keep this window open while the device claims the invitation.`; setVisible('securityPairingInvitation', true); showToast('Pairing invitation created.'); await loadSecurityPanel(); } catch (error) { showToast(error.message, 'alert'); } });

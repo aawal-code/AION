@@ -11,7 +11,7 @@ import { addActivity, getState, subscribe } from './state.js';
 let cachedDevices = [];
 let cachedWol = null;
 let cachedProcesses = [];
-let selectedDeviceId = 'local'; // 'all' | 'assistant' | device.id
+let selectedDeviceId = 'home'; // 'all' | 'assistant' | device.id
 let showAllProcesses = false;
 let editingDeviceId = null;
 let appMode = (typeof localStorage !== 'undefined' && localStorage.getItem('aion_dev_mode') === 'true') ? 'advanced' : 'simple';
@@ -42,6 +42,8 @@ export async function fetchDevices() {
       const userSelected = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('aion_selected_device') : null;
       if (userSelected && cachedDevices.some(d => d.id === userSelected)) {
         selectedDeviceId = userSelected;
+      } else if (selectedDeviceId === 'home' || selectedDeviceId === 'assistant' || selectedDeviceId === 'all') {
+        // Keep the chosen application view while device information refreshes.
       } else if (isClientOnMobile()) {
         // When client is mobile (e.g. iPhone), default active view to the iPhone itself
         const mobileDev = cachedDevices.find(d => isMobileDevice(d));
@@ -563,6 +565,7 @@ export function selectDevice(id) {
     sessionStorage.setItem('aion_selected_device', id);
   }
   renderAll();
+  window.dispatchEvent(new CustomEvent('aion:navigation', { detail: { id } }));
 
   // Close mobile sidebar if open
   closeMobileSidebar();
@@ -609,24 +612,26 @@ function renderSidebarDevices() {
   const countEl = document.getElementById('sidebarDeviceCount');
   const allDevicesBtn = document.getElementById('navItemAllDevices');
   const assistantBtn = document.getElementById('navItemAssistant');
+  const homeBtn = document.getElementById('navItemHome');
 
   if (countEl) countEl.textContent = String(cachedDevices.length);
 
   // Active state for static nav items
   if (allDevicesBtn) allDevicesBtn.classList.toggle('active', selectedDeviceId === 'all');
   if (assistantBtn) assistantBtn.classList.toggle('active', selectedDeviceId === 'assistant');
+  if (homeBtn) homeBtn.classList.toggle('active', selectedDeviceId === 'home');
 
   if (!listEl) return;
 
   listEl.innerHTML = cachedDevices
     .map((dev) => {
       const isSelected = dev.id === selectedDeviceId;
-      const isOnline = dev.online !== false;
+      const isOnline = dev.isLocal === true;
       const iconName = getDeviceIconName(dev.type);
 
       return `
-      <button class="sidebar-device-item ${isSelected ? 'active' : ''}" data-device-id="${dev.id}" type="button">
-        <span class="device-dot ${isOnline ? 'online' : 'offline'}"></span>
+      <button class="sidebar-device-item ${isSelected ? 'active' : ''}" data-device-id="${escapeHtml(dev.id)}" aria-label="${escapeHtml(dev.name)}" type="button">
+        <span class="device-dot ${isOnline ? 'online' : 'unknown'}"></span>
         <span class="sidebar-device-icon">${getSvgIcon(iconName, 'icon-sm')}</span>
         <span class="sidebar-device-name">${escapeHtml(dev.name)}</span>
       </button>
@@ -646,8 +651,18 @@ function renderActiveCanvasView() {
   const deviceView = document.getElementById('canvasDeviceView');
   const allDevicesView = document.getElementById('canvasAllDevicesView');
   const chatView = document.getElementById('canvasChatView');
+  const homeView = document.getElementById('canvasHomeView');
+  if (chatView) chatView.hidden = selectedDeviceId !== 'assistant';
+  if (homeView) homeView.style.display = selectedDeviceId === 'home' ? 'block' : 'none';
+  document.body.classList.toggle('view-home', selectedDeviceId === 'home');
 
-  if (selectedDeviceId === 'all') {
+  if (selectedDeviceId === 'home') {
+    const title = document.getElementById('mobileTopTitle'); if (title) title.textContent = t('navHome');
+    stopLocalTelemetryPolling();
+    if (deviceView) deviceView.style.display = 'none';
+    if (allDevicesView) allDevicesView.style.display = 'none';
+    if (chatView) chatView.style.display = 'none';
+  } else if (selectedDeviceId === 'all') {
     stopLocalTelemetryPolling();
     if (deviceView) deviceView.style.display = 'none';
     if (chatView) chatView.style.display = 'none';
@@ -656,6 +671,7 @@ function renderActiveCanvasView() {
       renderAllDevicesCards();
     }
   } else if (selectedDeviceId === 'assistant') {
+    const title = document.getElementById('mobileTopTitle'); if (title) title.textContent = t('navChatShort');
     stopLocalTelemetryPolling();
     if (deviceView) deviceView.style.display = 'none';
     if (allDevicesView) allDevicesView.style.display = 'none';
@@ -728,10 +744,7 @@ function renderActiveCanvasView() {
           remoteActions.style.display = 'block';
           setupRemoteActions(dev);
         }
-        if (desktopApps) {
-          desktopApps.style.display = 'block';
-          renderRunningProcesses();
-        }
+        if (desktopApps) desktopApps.style.display = 'none';
       }
 
       renderCompactActivity();
@@ -787,24 +800,17 @@ function renderDeviceCanvasHeader() {
   if (subtitleEl) subtitleEl.textContent = parts.join(' • ');
 
   // Status Indicator
-  const isOnline = dev.online !== false;
+  const isOnline = dev.isLocal === true;
   if (statusPill) {
     statusPill.className = `device-status-pill ${isOnline ? 'online' : 'offline'}`;
   }
   if (statusText) {
-    statusText.textContent = isOnline ? t('statusConnected') : t('statusOffline');
+    statusText.textContent = isOnline ? t('statusConnected') : 'Connection unverified';
   }
 
-  // Network State Connection Badge ('LAN' or 'Tailscale Mesh')
   if (connBadge && connText) {
-    const isMesh = Boolean(dev.tailscaleIp || dev.source === 'tailscale' || (dev.telemetry && dev.telemetry.route === 'mesh'));
-    if (isMesh) {
-      connBadge.className = 'device-connection-badge mesh';
-      connText.textContent = 'Tailscale Mesh';
-    } else {
-      connBadge.className = 'device-connection-badge lan';
-      connText.textContent = 'LAN';
-    }
+    connBadge.className = 'device-connection-badge';
+    connText.textContent = isOnline ? 'Local host' : 'AION connection unverified';
   }
 
   // Mobile Client Quick-Switch Pill (Control host workstation vs. Back to iPhone)
@@ -1041,9 +1047,6 @@ export function renderRunningProcesses() {
         <div class="app-row-actions">
           ${cpuBadge}
           <span class="app-ram-badge">${ramText}</span>
-          <button class="app-kill-btn" data-app-name="${escapeHtml(proc.name)}" data-proc-name="${escapeHtml(proc.processName)}" title="${t('btnQuitApp') || 'End Task'}" type="button">
-            ${isAdv ? 'Kill' : (t('btnQuitApp') || 'Quit')}
-          </button>
         </div>
       </div>
     `;
@@ -1114,7 +1117,7 @@ function renderAllDevicesCards() {
 
   container.innerHTML = cachedDevices
     .map((dev) => {
-      const isOnline = dev.online !== false;
+      const isOnline = dev.isLocal === true;
       const iconName = getDeviceIconName(dev.type);
 
       return `
@@ -1128,11 +1131,11 @@ function renderAllDevicesCards() {
               <h3 style="font-size: 16px; font-weight: 600;">${escapeHtml(dev.name)}</h3>
               <span class="device-status-pill ${isOnline ? 'online' : 'offline'}">
                 <span class="status-dot"></span>
-                <span>${isOnline ? t('statusConnected') : t('statusOffline')}</span>
+                <span>${isOnline ? t('statusConnected') : 'Connection unverified'}</span>
               </span>
             </div>
             <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">
-              ${escapeHtml(dev.os || 'OS')} &bull; ${dev.type.toUpperCase()}
+              ${escapeHtml(dev.os || 'OS')} &bull; ${escapeHtml((dev.type || 'device').toUpperCase())}
             </div>
           </div>
         </div>
@@ -1144,18 +1147,6 @@ function renderAllDevicesCards() {
         </div>
 
         <div style="display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end;">
-          ${!isMobileDevice(dev) ? `
-            <button class="btn-secondary" data-view-screen-target="${escapeHtml(dev.tailscaleIp || dev.lanIp || dev.id)}" type="button" style="padding: 6px 14px; font-size: 12px;">
-              ${getSvgIcon('desktop', 'icon-sm')}
-              <span>${t('btnViewScreen')}</span>
-            </button>
-          ` : ''}
-          ${!isOnline && dev.mac ? `
-            <button class="btn-primary" data-wake-id="${dev.id}" data-wake-mac="${dev.mac}" type="button" style="padding: 6px 14px; font-size: 12px;">
-              ${getSvgIcon('wake', 'icon-sm')}
-              <span>${t('btnWake')}</span>
-            </button>
-          ` : ''}
           <button class="btn-secondary" data-open-id="${dev.id}" type="button" style="padding: 6px 14px; font-size: 12px;">
             Open Controls
           </button>

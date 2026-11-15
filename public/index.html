@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="/css/theme.css">
   <link rel="stylesheet" href="/css/app.css">
 </head>
-<body>
+<body class="view-home">
   <div class="app-layout">
     
     <!-- Mobile Sidebar Backdrop -->
@@ -47,6 +47,7 @@
             <img src="/brand/wordmark-dark.svg" class="brand-wordmark sidebar-brand-wordmark brand-wordmark-dark" alt="AION">
           </div>
         </div>
+        <button class="icon-btn sidebar-collapse-control" id="btnCollapseSidebar" type="button" aria-label="Collapse sidebar" aria-expanded="true"><svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
         <button class="icon-btn" id="btnOpenSettings" type="button" data-i18n-title="navSettings" title="Settings">
           <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -57,6 +58,7 @@
 
       <!-- Sidebar Navigation Scroll -->
       <div class="sidebar-nav-scroll">
+        <div class="sidebar-section"><button class="sidebar-nav-item" id="navItemHome" type="button" aria-label="Home"><svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 10.5 12 3l9 7.5V21H3z"/><path d="M9 21v-7h6v7"/></svg><span class="sidebar-item-label" data-i18n="navHome">Home</span></button></div>
         <!-- Devices Section -->
         <div class="sidebar-section">
           <div class="sidebar-section-title" data-i18n="navDevices">Devices</div>
@@ -68,7 +70,7 @@
               <path d="M8 21h8"></path>
               <path d="M12 17v4"></path>
             </svg>
-            <span class="sidebar-item-label" data-i18n="deviceSelectorAll">All Devices</span>
+            <span class="sidebar-item-label" data-i18n="navMyDevices">My Devices</span>
             <span class="sidebar-badge" id="sidebarDeviceCount">0</span>
           </button>
 
@@ -95,7 +97,7 @@
       <footer class="sidebar-footer">
         <div class="sidebar-status-pill">
           <span class="status-dot"></span>
-          <span data-i18n="statusOperational">Running smoothly</span>
+          <span data-i18n="hostStatusUnknown">Host status unavailable</span>
         </div>
       </footer>
     </aside>
@@ -128,13 +130,21 @@
         </button>
       </div>
 
+      <nav class="mobile-bottom-nav" aria-label="Primary navigation">
+        <button type="button" id="mobileNavHome" data-i18n="navHome">Home</button><button type="button" id="mobileNavChat" data-i18n="navChatShort">Chat</button><button type="button" id="mobileNavDevices" data-i18n="navMyDevices">My Devices</button><button type="button" id="mobileNavSettings" data-i18n="navSettings">Settings</button>
+      </nav>
       <!-- Canvas Inner Centered Container -->
       <div class="canvas-inner main-scroll">
         
         <!-- =============================================================== -->
         <!-- CANVAS VIEW 1: ACTIVE DEVICE VIEW & CONTROLS                    -->
         <!-- =============================================================== -->
-        <div id="canvasDeviceView" class="device-dashboard-container">
+        <section id="canvasHomeView" class="home-workspace" aria-labelledby="homeTitle">
+          <header><h1 id="homeTitle" data-i18n="homeTitle">Your workspace</h1><p data-i18n="homeIntro">Ask a question or choose a device to view.</p></header>
+          <form id="homeAskForm" class="home-action"><label for="homeAskInput" data-i18n="homeAsk">Ask AI</label><p data-i18n="homeAskHelp">Continue in your selected project conversation.</p><textarea id="homeAskInput" rows="3" required maxlength="32000" data-i18n-placeholder="homeAskPlaceholder" placeholder="What would you like to know?"></textarea><button type="submit" class="btn-primary" data-i18n="homeAskSend">Open chat and ask</button></form>
+          <form id="homeDeviceForm" class="home-action"><label for="homeDeviceSelect" data-i18n="homeControl">Control a Device</label><p data-i18n="homeControlHelp">Choose a device to see its available controls.</p><select id="homeDeviceSelect" required><option value="" data-i18n="homeChooseDevice">Choose a device</option></select><button type="submit" class="btn-secondary" data-i18n="homeOpenDevice">Open device</button><p id="homeDeviceStatus" role="status" data-i18n="homeDeviceLoading">Checking devices…</p></form>
+        </section>
+        <div id="canvasDeviceView" class="device-dashboard-container" style="display:none;">
           <!-- Device Hero Header Row -->
           <div class="device-hero-header">
             <div>
@@ -998,7 +1008,7 @@
         <!-- =============================================================== -->
         <!-- CANVAS VIEW 3: ASSISTANT WORKSPACE                              -->
         <!-- =============================================================== -->
-        <div id="canvasChatView" style="display: none;">
+        <div id="canvasChatView" style="display: none;" hidden>
           <div class="assistant-workspace-layout">
             
             <!-- Left-Hand Project Rail / List -->
@@ -1083,7 +1093,7 @@
                   <!-- Execution Target Selector (CLI vs Direct API) -->
                   <div class="execution-target-bar" id="executionTargetBar">
                     <div class="target-mode-segmented" id="targetModeToggle" title="Execution Runtime Engine">
-                      <button class="target-mode-btn active" id="targetModeCli" data-runtime="cli" type="button">CLI</button>
+                      <button class="target-mode-btn" id="targetModeCli" data-runtime="cli" type="button" disabled title="CLI execution is not yet available">CLI</button>
                       <button class="target-mode-btn" id="targetModeApi" data-runtime="api" type="button">API</button>
                     </div>
 
@@ -1110,15 +1120,8 @@
                         <option value="groq">Groq</option>
                         <option value="ollama">Ollama</option>
                       </select>
-                      <select class="target-select" id="targetModelSelect" aria-label="Select Model">
-                        <option value="llama3.3-70b">llama3.3-70b</option>
-                        <option value="llama-3.1-8b">llama-3.1-8b</option>
-                        <option value="gpt-4o">gpt-4o</option>
-                        <option value="gpt-4o-mini">gpt-4o-mini</option>
-                        <option value="claude-3-5-sonnet-20241022">claude-3.5-sonnet</option>
-                        <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                        <option value="llama3.2">llama3.2</option>
-                      </select>
+                      <input class="target-select" id="targetModelSelect" aria-label="Model identifier" list="modelSuggestions" maxlength="160" placeholder="Model ID" autocomplete="off">
+                      <datalist id="modelSuggestions"><option value="gpt-4o"><option value="gpt-4o-mini"><option value="llama3.3-70b"><option value="llama3.2"></datalist>
                     </div>
                   </div>
 
@@ -1364,11 +1367,11 @@
         <!-- System Updates -->
         <div class="settings-group">
           <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;" data-i18n="devUpdatesTitle">System Updates</div>
-          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;" data-i18n="devUpdatesDesc">Seamless in-place updates from GitHub.</p>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;" data-i18n="devUpdatesDesc">Update installation is not available until verification and rollback are implemented.</p>
           <div class="updater-controls-row" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
             <div class="updater-info" style="display: flex; align-items: center; gap: 8px;">
               <span class="updater-version-tag" id="updaterVersionTag" style="font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; border-radius: var(--radius-xs); background: var(--surface-hover);">v1.0.0-beta.2</span>
-              <span class="updater-status-label" id="updateStatusLabel" data-i18n="upToDateMsg" style="font-size: 12.5px; color: var(--text-secondary);">Your system is up to date</span>
+              <span class="updater-status-label" id="updateStatusLabel" style="font-size: 12.5px; color: var(--text-secondary);">Update status not checked</span>
             </div>
             <div class="updater-btns" style="display: flex; gap: 8px;">
               <button class="btn-secondary" id="btnCheckUpdates" type="button" style="padding: 6px 14px; font-size: 12px;">
@@ -1418,47 +1421,10 @@
           </div>
         </div>
 
-        <!-- Visual Rolling PIN Authenticator -->
         <div class="settings-group">
-          <div class="settings-group-title">Rolling PIN Authenticator</div>
-          <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">
-            Cycles every 120 seconds with a 15-second grace window to authenticate remote mobile and tablet devices.
-          </p>
-
-          <div class="rolling-pin-card">
-            <div class="rolling-pin-top">
-              <div>
-                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); font-weight: 600;">Current Rolling PIN</div>
-                <div class="rolling-pin-display" id="settingsPairingPin">----</div>
-              </div>
-              <div style="display: flex; gap: 8px;">
-                <button class="btn-secondary" id="btnRegeneratePin" type="button" style="padding: 6px 12px; font-size: 12px;">Regenerate</button>
-                <a href="/api/ios/profile.mobileconfig?theme=dark" class="btn-secondary" id="btnDownloadIosProfile" style="padding: 6px 12px; font-size: 12px; text-decoration: none;">iOS WebClip</a>
-              </div>
-            </div>
-
-            <!-- Animated Visual Countdown Progress Bar -->
-            <div class="rolling-pin-bar">
-              <div class="rolling-pin-progress" id="pinProgressBar" style="width: 100%;"></div>
-            </div>
-
-            <div class="rolling-pin-meta">
-              <span>Automatic 120s rolling cycle with 15s grace</span>
-              <span id="pinCountdownText" style="font-family: var(--font-mono); font-weight: 600; color: var(--accent);">Cycles in 120s</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Trusted & Remembered Devices -->
-        <div class="settings-group">
-          <div class="settings-group-title">Trusted Devices &amp; Tokens</div>
-          <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">
-            Authorized remote nodes holding 64-character persistent tokens. Revoke immediately to disconnect.
-          </p>
-          <div class="trusted-devices-list" id="trustedDevicesList">
-            <!-- Populated dynamically via GET /api/auth/devices -->
-            <div style="font-size: 12px; color: var(--text-tertiary);">Loading trusted devices...</div>
-          </div>
+          <div class="settings-group-title">AION remote access</div>
+          <p>Remote access is not available yet. Tailscale connection does not grant AION access; secure device pairing and HTTPS sessions are still being verified.</p>
+          <button class="btn-secondary" id="btnOpenSecurityFromNetwork" type="button">Manage local identity and pairing</button>
         </div>
 
       </div>
@@ -1470,7 +1436,7 @@
         <div class="settings-group">
           <div class="settings-group-title">API Vault &amp; Provider Keys</div>
           <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">
-            Securely stored in your browser's private vault for agentic synthesis and zero-delay execution.
+            Provider credentials are protected on this Windows host. Select a provider and model in Chat; credentials are never stored in browser localStorage.
           </p>
           <div class="api-vault-list" id="apiVaultList">
             <!-- Populated dynamically by settings.js -->
@@ -1481,9 +1447,9 @@
         <div class="settings-group">
           <div class="settings-group-title">Bring-Your-Own-CLI (BYOCLI) Profiles</div>
           <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px;">
-            Supervise external CLI runtimes and autonomous coding agents with configurable sandbox permissions.
+            CLI execution is not available until an approved, bounded runner is implemented.
           </p>
-          <div class="byocli-grid" id="byocliGrid">
+          <div class="byocli-grid" id="byocliGrid" hidden>
             <!-- Populated dynamically by settings.js -->
           </div>
         </div>

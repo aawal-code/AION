@@ -7,6 +7,7 @@
 export const TRANSLATIONS = {
   en: {
     // Navigation
+    hostStatusUnknown: 'Host status unavailable', navHome: 'Home', navChatShort: 'Chat', navMyDevices: 'My Devices', homeTitle: 'Your workspace', homeIntro: 'Ask a question or choose a device to view.', homeAsk: 'Ask AI', homeAskHelp: 'Continue in your selected project conversation.', homeAskPlaceholder: 'What would you like to know?', homeAskSend: 'Open chat and ask', homeControl: 'Control a Device', homeControlHelp: 'Choose a device to see its available controls.', homeChooseDevice: 'Choose a device', homeOpenDevice: 'Open device', homeDeviceLoading: 'Checking devices…', homeDeviceUnavailable: 'Devices unavailable. Sign in or check the host.', homeDeviceNone: 'No devices are available.', homeDeviceReady: 'Select a device to continue.',
     navDevices: 'Devices',
     navChat: 'Assistant & Chat',
     navSettings: 'Settings',
@@ -269,6 +270,7 @@ export const TRANSLATIONS = {
 
   ar: {
     // Navigation
+    hostStatusUnknown: 'حالة المضيف غير متاحة', navHome: 'الرئيسية', navChatShort: 'المحادثة', navMyDevices: 'أجهزتي', homeTitle: 'مساحة عملك', homeIntro: 'اطرح سؤالاً أو اختر جهازاً لعرضه.', homeAsk: 'اسأل الذكاء الاصطناعي', homeAskHelp: 'تابع محادثتك في المشروع المحدد.', homeAskPlaceholder: 'ماذا تريد أن تعرف؟', homeAskSend: 'افتح المحادثة واسأل', homeControl: 'التحكم بجهاز', homeControlHelp: 'اختر جهازاً لعرض عناصر التحكم المتاحة.', homeChooseDevice: 'اختر جهازاً', homeOpenDevice: 'افتح الجهاز', homeDeviceLoading: 'جارٍ التحقق من الأجهزة…', homeDeviceUnavailable: 'الأجهزة غير متاحة. سجّل الدخول أو تحقّق من المضيف.', homeDeviceNone: 'لا توجد أجهزة متاحة.', homeDeviceReady: 'اختر جهازاً للمتابعة.',
     navDevices: 'الأجهزة',
     navChat: 'المساعد والمحادثة',
     navSettings: 'الإعدادات',
@@ -531,6 +533,7 @@ export const TRANSLATIONS = {
 
   de: {
     // Navigation
+    hostStatusUnknown: 'Hoststatus nicht verfügbar', navHome: 'Start', navChatShort: 'Chat', navMyDevices: 'Meine Geräte', homeTitle: 'Ihr Arbeitsbereich', homeIntro: 'Stellen Sie eine Frage oder wählen Sie ein Gerät.', homeAsk: 'KI fragen', homeAskHelp: 'Setzen Sie den Chat im ausgewählten Projekt fort.', homeAskPlaceholder: 'Was möchten Sie wissen?', homeAskSend: 'Chat öffnen und fragen', homeControl: 'Gerät steuern', homeControlHelp: 'Wählen Sie ein Gerät, um verfügbare Funktionen zu sehen.', homeChooseDevice: 'Gerät auswählen', homeOpenDevice: 'Gerät öffnen', homeDeviceLoading: 'Geräte werden geprüft…', homeDeviceUnavailable: 'Geräte nicht verfügbar. Melden Sie sich an oder prüfen Sie den Host.', homeDeviceNone: 'Keine Geräte verfügbar.', homeDeviceReady: 'Wählen Sie ein Gerät aus.',
     navDevices: 'Geräte',
     navChat: 'Assistent & Chat',
     navSettings: 'Einstellungen',

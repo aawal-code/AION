@@ -98,7 +98,6 @@ const API_PROVIDERS = [
   { id: 'openai', name: 'OpenAI (GPT-4o)', placeholder: 'sk-proj-...' },
   { id: 'gemini', name: 'Google Gemini', placeholder: 'AIzaSy...' },
   { id: 'groq', name: 'Groq Cloud', placeholder: 'gsk_...' },
-  { id: 'ollama', name: 'Ollama Endpoint', placeholder: 'http://localhost:11434' },
 ];
 
 /**
@@ -115,8 +114,6 @@ export function openSettings(tabName = 'general') {
   // Load live data for settings
   loadGeneralProfile();
   fetchNetworkMesh();
-  fetchRollingPin();
-  fetchTrustedDevices();
   renderApiVault();
   renderByocliGrid();
   loadInterfaceSettings();
@@ -319,18 +316,18 @@ export async function fetchNetworkMesh() {
 
     const isConnected = !!data.connected;
     if (badgeEl) {
-      badgeEl.textContent = isConnected ? 'Connected' : 'Offline';
+      badgeEl.textContent = isConnected ? 'Tailscale connected' : 'Tailscale offline';
       badgeEl.className = `sidebar-badge ${isConnected ? 'badge-success' : 'badge-neutral'}`;
       badgeEl.style.background = isConnected ? 'var(--color-success-subtle)' : 'var(--surface-hover)';
       badgeEl.style.color = isConnected ? 'var(--color-success)' : 'var(--text-secondary)';
     }
 
-    if (ipv4El) ipv4El.textContent = data.ipv4 || '100.x.y.z (Tailscale inactive)';
+    if (ipv4El) ipv4El.textContent = data.ipv4 || 'Not assigned';
     if (ipv6El) ipv6El.textContent = data.ipv6 || 'Not assigned';
     if (hostEl) hostEl.textContent = data.hostname || 'localhost';
   } catch {
     if (badgeEl) {
-      badgeEl.textContent = 'Standby';
+      badgeEl.textContent = 'Status unavailable';
       badgeEl.style.background = 'var(--surface-hover)';
       badgeEl.style.color = 'var(--text-secondary)';
     }
@@ -790,10 +787,14 @@ export function setThemeMode(mode) {
 // Initialization & Global Event Wiring
 // ==========================================================================
 
+let settingsInitialized = false;
 export function initSettings() {
+  if (settingsInitialized) return; settingsInitialized = true;
   // Modal open triggers
   document.getElementById('btnOpenSettings')?.addEventListener('click', () => openSettings('general'));
   document.getElementById('btnMobileSettings')?.addEventListener('click', () => openSettings('general'));
+  document.getElementById('btnOpenSecurityFromNetwork')?.addEventListener('click', () => { switchTab('security'); loadSecurityPanel(); });
+  window.aionOpenSecurity = () => openSettings('security');
 
   // Modal close triggers
   document.getElementById('btnCloseSettings')?.addEventListener('click', closeSettings);
@@ -818,6 +819,7 @@ export function initSettings() {
   });
 
   initSecurity();
+  window.addEventListener('aion:authenticated', () => { if (document.getElementById('settingsModal')?.classList.contains('active')) renderApiVault(); });
 
   // General Save Button
   document.getElementById('btnSaveGeneralProfile')?.addEventListener('click', saveGeneralProfile);

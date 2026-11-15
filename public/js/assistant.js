@@ -30,7 +30,7 @@ let isListening = false;
 let isFullscreen = false;
 
 let currentTarget = {
-  runtimeMode: 'cli', // 'cli' | 'api'
+  runtimeMode: 'api', // CLI execution is disabled
   cliProfile: 'agy',
   apiProvider: 'cerebras',
   apiModel: 'llama3.3-70b',
@@ -66,6 +66,8 @@ export async function loadExecutionTarget() {
       }
     }
   } catch (_) {}
+  // Older profiles may still select the disabled CLI runtime.
+  currentTarget.runtimeMode = 'api';
   applyTargetToUi();
 }
 
@@ -122,28 +124,27 @@ export function setupTargetSelector() {
     if (currentTarget.apiProvider === 'cerebras') currentTarget.apiModel = 'llama3.3-70b';
     else if (currentTarget.apiProvider === 'openai') currentTarget.apiModel = 'gpt-4o';
     else if (currentTarget.apiProvider === 'anthropic') currentTarget.apiModel = 'claude-3-5-sonnet-20241022';
+    else if (currentTarget.apiProvider === 'groq') currentTarget.apiModel = 'llama-3.3-70b-versatile';
     else if (currentTarget.apiProvider === 'gemini') currentTarget.apiModel = 'gemini-1.5-flash';
     else if (currentTarget.apiProvider === 'ollama') currentTarget.apiModel = 'llama3.2';
     applyTargetToUi();
     persistTarget();
-    showToast(`Provider: ${currentTarget.apiProvider}`, 'check');
   });
 
   modelSelect?.addEventListener('change', (e) => {
-    currentTarget.apiModel = e.target.value;
+    currentTarget.apiModel = e.target.value.trim();
     persistTarget();
-    showToast(`Model: ${currentTarget.apiModel}`, 'check');
   });
 }
 
+let targetSaveQueue = Promise.resolve();
 async function persistTarget() {
-  try {
-    await assistantFetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ executionTarget: currentTarget }),
-    });
-  } catch (_) {}
+  const target = { ...currentTarget };
+  targetSaveQueue = targetSaveQueue.catch(() => {}).then(async () => {
+    const response = await assistantFetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ executionTarget: target }) });
+    if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || 'Could not save provider selection'); }
+  });
+  try { await targetSaveQueue; } catch (error) { showToast(error.message, 'alert'); }
 }
 
 /**

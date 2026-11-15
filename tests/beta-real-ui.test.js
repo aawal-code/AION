@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+import { chromium } from 'playwright';
+
+const chrome = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const freePort = () => new Promise((resolve, reject) => { const s = net.createServer(); s.once('error', reject); s.listen(0, '127.0.0.1', () => { const port = s.address().port; s.close(() => resolve(port)); }); });
+
+test('Master spec §2/§3/§5: real isolated host enrollment and project conversation recovery in browser', { skip: !fs.existsSync(chrome), timeout: 60000 }, async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aion-real-ui-')); fs.cpSync(path.join(root, 'public'), path.join(dir, 'public'), { recursive: true });
+  const port = await freePort(), secret = crypto.randomBytes(32).toString('base64url');
+  const env = { ...process.env, PORT: String(port), AION_BIND_HOST: '127.0.0.1', AION_LOCAL_AUTH_SECRET: secret, AION_SECURITY_DB_PATH: path.join(dir, 'security.sqlite'), AION_ASSISTANT_DB_PATH: path.join(dir, 'assistant.sqlite'), AION_VAULT_DIR: path.join(dir, 'vault'), AION_TRANSPORT_IDENTITY_PATH: path.join(dir, 'identity.dpapi'), SYNCTHING_CONFIG_PATH: path.join(dir, 'no-config'), SYNCTHING_PORT: '1' };
+  for (const key of ['OPENAI_API_KEY','AION_OPENAI_KEY','ANTHROPIC_API_KEY','AION_ANTHROPIC_KEY','CLAUDE_API_KEY','CEREBRAS_API_KEY','AION_CEREBRAS_KEY','GROQ_API_KEY','AION_GROQ_KEY','GEMINI_API_KEY','AION_GEMINI_KEY','GOOGLE_API_KEY','AION_TEST_VAULT_KEY']) delete env[key];
+  const child = spawn(process.execPath, [path.join(root, 'src/server.js')], { cwd: dir, env, stdio: 'ignore', windowsHide: true });
+  const browser = await chromium.launch({ headless: true, executablePath: chrome });
+  t.after(async () => { await browser.close(); child.kill(); await new Promise((resolve) => child.once('exit', resolve)); try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* Windows may retain a temporary file handle briefly. */ } });
+  const origin = `http://127.0.0.1:${port}`;
+  for (let i = 0; ; i++) { try { if ((await fetch(origin)).ok) break; } catch {} if (i > 100) throw new Error('Host did not start'); await new Promise((resolve) => setTimeout(resolve, 50)); }
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  assert.equal((await context.request.get(`${origin}/api/devices`)).status(), 401);
+  const bootstrap = await context.request.get(`${origin}/api/auth/local-session`, { headers: { 'x-aion-local-secret': secret }, maxRedirects: 0 }); assert.equal(bootstrap.status(), 200);
+  const page = await context.newPage(); page.setDefaultTimeout(8000); await page.goto(origin, { waitUntil: 'domcontentloaded' });
+  await page.locator('#securityOwnerName').fill('Isolated owner'); await page.locator('#btnSecurityEnroll').click();
+  await page.locator('#securityOneTimeKey').waitFor({ state: 'visible', timeout: 10000 }); await page.locator('#securityRecoveryConfirmed').check(); await page.locator('#btnSecurityDismissRecovery').click();
+  await page.waitForFunction(async () => (await (await fetch('/api/auth/status')).json()).authenticated === true);
+  const deviceInfo = await page.evaluate(async () => { const r = await fetch('/api/devices'); const d = await r.json(); return { status: r.status, count: d.devices?.length, local: d.devices?.some((item) => item.isLocal) }; }); assert.equal(deviceInfo.status, 200); assert.ok(deviceInfo.local);
+  const processes = await page.evaluate(async () => { const r = await fetch('/api/system/processes'); const d = await r.json(); return { status: r.status, array: Array.isArray(d.processes) }; }); assert.deepEqual(processes, { status: 200, array: true });
+  await page.locator('[data-settings-tab="vault"]').click();
+  const providerRow = page.locator('.api-vault-item').filter({ has: page.locator('.api-key-entry[data-provider="openai"]') });
+  await providerRow.locator('input').fill('synthetic-fixture-only'); await providerRow.getByRole('button', { name: 'Save' }).click();
+  await providerRow.getByText('Configured', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+  await providerRow.getByRole('button', { name: 'Remove' }).click(); await providerRow.getByText('Missing', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+  await page.locator('#btnCloseSettings').click(); await page.locator('#navItemAssistant').click();
+  await page.locator('#btnNewProject').click(); await page.locator('#newProjectName').fill('Preview project'); await page.locator('#newProjectForm').locator('button[type=submit]').click();
+  await page.getByRole('button', { name: 'Preview project' }).waitFor({ state: 'visible' });
+  const projectDir = path.join(dir, 'existing'); fs.mkdirSync(projectDir); fs.writeFileSync(path.join(projectDir, 'untouched.txt'), 'unchanged');
+  await page.locator('#projectManage summary').click(); await page.locator('#projectFolderPath').fill(projectDir); await page.locator('#projectFolderForm').locator('button[type=submit]').click();
+  await page.locator('#projectFolders').getByText(fs.realpathSync(projectDir), { exact: true }).waitFor({ state: 'visible' }); assert.equal(fs.readFileSync(path.join(projectDir, 'untouched.txt'), 'utf8'), 'unchanged');
+  await page.locator('#modeBtnExecute').click(); await page.locator('#taskTitle').fill('Isolated text check'); await page.locator('#taskInput').fill('hello'); await page.locator('#taskHost').selectOption('local'); await page.locator('#taskProposalForm').locator('button[type=submit]').click();
+  const task = page.locator('#taskList .task-entry').filter({ hasText: 'Isolated text check' }); await task.getByRole('button', { name: 'Approve' }).click(); await task.getByRole('button', { name: 'Run' }).click();
+  await task.getByText(/SHA-256: 2cf24dba5fb0a30e/).waitFor({ state: 'visible' }); await page.locator('#modeBtnAsk').click();
+  await page.locator('#btnNewChat').click(); await page.locator('#assistantSessionsList .assistant-session-item').first().waitFor({ state: 'visible' });
+  await page.locator('#targetProviderSelect').selectOption('openai'); await page.locator('#targetModelSelect').fill('synthetic-model'); await page.locator('#targetModelSelect').blur(); await page.locator('#commandInput').fill('A question with no test credential'); await page.locator('#commandBarForm').dispatchEvent('submit');
+  await page.getByText('The selected AI provider is not configured. Add its credential in Settings.').waitFor({ state: 'visible' });
+  const sessionId = await page.locator('#assistantSessionsList .assistant-session-item').first().getAttribute('data-session-id'); const saved = await page.evaluate(async (id) => (await (await fetch(`/api/assistant/sessions/${id}/messages`)).json()).messages, sessionId); assert.equal(JSON.parse(saved.at(-1).metadata).model, 'synthetic-model');
+  await page.reload({ waitUntil: 'domcontentloaded' }); await page.locator('#navItemAssistant').click(); await page.getByRole('button', { name: 'Preview project' }).waitFor({ state: 'visible' }); await page.getByRole('button', { name: 'Preview project' }).click();
+  await page.getByText('A question with no test credential').waitFor({ state: 'visible' });
+});

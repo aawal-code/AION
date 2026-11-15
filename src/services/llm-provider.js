@@ -30,6 +30,7 @@ export async function resolveActiveProvider(preferredProvider = null) {
     : allProviders;
 
   for (const prov of providersToCheck) {
+    if (prov === 'ollama') { if (preferredProvider) return { provider: 'ollama', apiKey: 'local' }; continue; }
     const key = await getApiKey(prov);
     if (key && key.trim()) {
       return { provider: prov, apiKey: key.trim() };

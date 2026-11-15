@@ -172,7 +172,7 @@ describe('Milestone 4: Global UI, Apple-Grade CSS & Settings Preferences', () =>
       assert.ok(html.includes('id="btnSaveGeneralProfile"'), 'Save Profile button must exist');
     });
 
-    test('Network & Access Tab contains Tailscale Mesh, Rolling PIN progress bar, and Trusted Devices', () => {
+    test('Network & Access Tab reports Tailscale state without advertising disabled pairing', () => {
       const html = fs.readFileSync('public/index.html', 'utf8');
 
       // Tailscale Mesh
@@ -181,15 +181,9 @@ describe('Milestone 4: Global UI, Apple-Grade CSS & Settings Preferences', () =>
       assert.ok(html.includes('id="settingsTailscaleIpv6"'), 'Tailscale IPv6 display must exist');
       assert.ok(html.includes('id="settingsTailscaleHost"'), 'Mesh hostname display must exist');
 
-      // Rolling PIN
-      assert.ok(html.includes('id="settingsPairingPin"'), 'Pairing PIN display must exist');
-      assert.ok(html.includes('id="pinProgressBar"'), 'Rolling PIN visual countdown bar must exist');
-      assert.ok(html.includes('id="pinCountdownText"'), 'Rolling PIN countdown text must exist');
-      assert.ok(html.includes('id="btnRegeneratePin"'), 'Regenerate PIN button must exist');
-      assert.ok(html.includes('id="btnDownloadIosProfile"'), 'iOS WebClip profile button must exist');
-
-      // Trusted Devices
-      assert.ok(html.includes('id="trustedDevicesList"'), 'Trusted devices list container must exist');
+      assert.ok(html.includes('Remote access is not available yet'));
+      assert.ok(html.includes('id="btnOpenSecurityFromNetwork"'));
+      assert.ok(!html.includes('id="btnRegeneratePin"'));
     });
 
     test('API Vault & Execution Tab contains API Key Manager and BYOCLI Grid', () => {
