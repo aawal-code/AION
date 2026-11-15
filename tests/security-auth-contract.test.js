@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import net from 'node:net';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -25,6 +26,10 @@ test('security contract rejects local impostors and enforces signed cookie sessi
     assert.equal((await fetch(`${origin}/api/devices`)).status, 401, 'anonymous loopback is not trusted');
     assert.equal((await fetch(`${origin}/api/auth/status`, { headers: { origin: 'http://evil.invalid' } })).status, 403, 'foreign origins are denied');
     assert.equal((await fetch(`${origin}/api/auth/local-session`)).status, 401, 'local address alone cannot mint bootstrap');
+    assert.equal((await fetch(`${origin}/api/auth/local-session`, { headers: { 'x-aion-local-secret': secret, 'x-forwarded-proto': 'https' } })).status, 401, 'a proxy cannot redeem the local bootstrap');
+    const proxiedHostStatus = await new Promise((resolve, reject) => { const req = http.get({ host: '127.0.0.1', port: listenPort, path: '/api/auth/local-session', headers: { 'x-aion-local-secret': secret, host: 'example.ts.net' } }, (res) => { res.resume(); resolve(res.statusCode); }); req.on('error', reject); }); assert.equal(proxiedHostStatus, 401, 'bootstrap requires a loopback Host header');
+    assert.equal((await fetch(`${origin}/api/ios/profile.mobileconfig`)).status, 503, 'unverified remote profiles are not issued');
+    assert.equal((await fetch(`${origin}/setup`)).status, 503, 'unverified remote setup is unavailable');
     const bootstrap = await fetch(`${origin}/api/auth/local-session`, { headers: { 'x-aion-local-secret': secret } });
     assert.equal(bootstrap.status, 200);
     const bootstrapJar = cookies(bootstrap); const csrf = /aion_csrf=([^;]+)/.exec(bootstrapJar)?.[1]; assert.ok(csrf);

@@ -680,23 +680,7 @@ export async function handleRequest(req, res) {
   }
 
   // 3. Apple iOS Web Clip Profile (.mobileconfig)
-  if (urlPath === '/api/ios/profile.mobileconfig' && req.method === 'GET') {
-    const theme = parsedUrl.searchParams.get('theme') || 'dark';
-    const host = req.headers.host || 'localhost:5050';
-    const mesh = await getMeshStatus().catch(() => null);
-    let targetUrl = null;
-    if (mesh?.dnsName) {
-      targetUrl = `https://${mesh.dnsName}`;
-    } else if (mesh?.ipv4) {
-      targetUrl = `http://${mesh.ipv4}:5050`;
-    }
-    const xml = generateMobileConfig(host, theme, targetUrl);
-    res.writeHead(200, {
-      'Content-Type': 'application/x-apple-aspen-config; charset=utf-8',
-      'Content-Disposition': `attachment; filename="aion-${theme}.mobileconfig"`,
-    });
-    return res.end(xml);
-  }
+  if (urlPath === '/api/ios/profile.mobileconfig' && req.method === 'GET') return sendJson(res, 503, { status: 'disabled', error: 'Remote HTTPS access is not configured or verified.' });
 
   // 3a. Dynamic Theme-Synced PWA Manifest
   if (urlPath === '/manifest.json' && req.method === 'GET') {
@@ -748,33 +732,7 @@ export async function handleRequest(req, res) {
   }
 
   // 3b. Zero-Cloud Mobile Bridge Gateway: GET /setup
-  if (urlPath === '/setup' && req.method === 'GET') {
-    const isTs = isTailscaleClient(req);
-
-    // Dynamic mesh status check for client-side polling: GET /setup?check=1
-    if (parsedUrl.searchParams.get('check') === '1') {
-      const clientIp = getClientIp(req);
-      return sendJson(res, 200, {
-        status: 'ok',
-        isTailscale: isTs,
-        clientIp,
-      });
-    }
-
-    // If request originates from Tailscale IP (100.x.x.x), redirect to main dashboard
-    if (isTs) {
-      res.writeHead(302, { Location: '/' });
-      return res.end();
-    }
-
-    // Otherwise, render Mobile Gateway Screen
-    const html = getMobileGatewayHtml(req);
-    res.writeHead(200, {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-    });
-    return res.end(html);
-  }
+  if (urlPath === '/setup' && req.method === 'GET') return sendJson(res, 503, { status: 'disabled', error: 'Remote access is not configured or verified.' });
 
   // 4. Zero-Dependency VAPID Web Push Endpoints
   if (urlPath.startsWith('/api/push')) {
@@ -827,12 +785,6 @@ export async function handleRequest(req, res) {
     return sendJson(res, 503, { status: 'disabled', error: 'Remote screen viewing is disabled pending session-scoped consent.' });
   }
 
-  // 6. Tailscale Mesh State Polling
-  if (urlPath.startsWith('/api/network')) {
-    const handled = await handleNetworkRoutes(req, res, urlPath);
-    if (handled !== false) return;
-  }
-
   // --- CENTRAL IDENTITY + CAPABILITY GUARD FOR REMAINING PROTECTED API ROUTES ---
   if (urlPath.startsWith('/api/')) {
     if (!(await authorizeApiRequest(req, res, urlPath))) return;
@@ -846,6 +798,12 @@ export async function handleRequest(req, res) {
     ['/api/sync/folder', '/api/sync/device', '/api/sync/trigger'].includes(urlPath)
   );
   if (blockedLegacyAction) return sendJson(res, 503, { status: 'disabled', error: 'This action is unavailable until scoped approval is supported.' });
+
+  // 6. Tailscale Mesh State Polling
+  if (urlPath.startsWith('/api/network')) {
+    const handled = await handleNetworkRoutes(req, res, urlPath);
+    if (handled !== false) return;
+  }
 
   // Workstation Configuration & Execution Target Persistence
   if (urlPath === '/api/config') {

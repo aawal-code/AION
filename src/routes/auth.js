@@ -36,6 +36,9 @@ async function bootstrapContext(req) { return getDesktopBootstrapContext(getCook
 function error(res, err) { return sendJson(res, err.statusCode || 400, { status: 'error', error: err.message || 'Security operation failed' }); }
 
 async function localSession(req, res) {
+  const host = String(req.headers.host || '');
+  const proxied = Object.keys(req.headers).some((name) => name === 'forwarded' || name.startsWith('x-forwarded-') || name.startsWith('tailscale-user-'));
+  if (proxied || !/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host)) return sendJson(res, 401, { status: 'error', error: 'Native desktop enrollment requires a direct loopback request' });
   if (!isLocalhost(req) || !verifyLocalAuthSecret(req)) return sendJson(res, 401, { status: 'error', error: 'Verified native desktop authentication required' });
   try {
     const session = await issueDesktopBootstrap(); const csrf = crypto.randomBytes(32).toString('base64url');

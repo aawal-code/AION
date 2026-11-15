@@ -1478,38 +1478,7 @@ export async function enableMobilePushNotifications() {
 
 // ==========================================================================
 // App Master Initialization
-export function startLanToMeshAutoRedirect() {
-  if (typeof window === 'undefined') return;
-  const host = window.location.hostname;
-  const isLan = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(host);
-  if (!isLan) return;
-
-  fetch('/api/capabilities')
-    .then(r => r.json())
-    .then(data => {
-      const caps = data?.capabilities;
-      if (!caps) return;
-      const target = caps.tailscaleHttpsUrl || caps.tailscaleHttpUrl || (caps.tailscaleIp ? `http://${caps.tailscaleIp}:5050` : null);
-      if (!target) return;
-
-      const probeInterval = setInterval(async () => {
-        try {
-          const ctrl = new AbortController();
-          const tid = setTimeout(() => ctrl.abort(), 2000);
-          const probe = await fetch(`${target}/api/capabilities`, { signal: ctrl.signal });
-          clearTimeout(tid);
-          if (probe.ok) {
-            clearInterval(probeInterval);
-            console.log('[AION Mesh] Tailscale reachable. Redirecting to encrypted mesh:', target);
-            window.location.href = `${target}/`;
-          }
-        } catch {
-          // Continue background probing
-        }
-      }, 3500);
-    })
-    .catch(() => {});
-}
+export function startLanToMeshAutoRedirect() { /* Remote access is not yet available. */ }
 
 // ==========================================================================
 if (typeof document !== 'undefined') {

@@ -68,3 +68,5 @@
 The file-sync guard deliberately blocks these four cases until handle-based containment is implemented: `tests/chunked-file-transfer.integration.test.js` (authenticated transfer), `tests/chunked-file-transfer.test.js` (corrupt chunk/full-file verification and legacy small-file events), and `tests/file-sync.integration.test.js` (small-file host transfer). Their expected failures do not establish transfer safety. The separate path-rejection case currently stops at the guard and is not evidence against directory-swap races.
 
 The legacy `/api/ai`, direct workstation-command, process-kill, queued device-command, and mutating Syncthing routes are disabled until scoped approval is implemented. `tests/beta-chat.test.js` checks authenticated Owner and Trusted sessions cannot use these paths to bypass approval or file-sync containment.
+
+Tailscale Serve has been investigated but remains disabled; see `docs/TAILSCALE_ACCESS.md`. The backend is loopback-only, native bootstrap rejects proxied requests, and unverified remote URLs and profiles are not advertised. Remote pairing and HTTPS browser sessions remain release blockers.

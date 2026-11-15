@@ -6,6 +6,7 @@ import { setResourcePolicy } from './services/telemetry.js';
 
 const PORT = parseInt(process.env.PORT, 10) || 5050;
 const HOST = process.env.AION_BIND_HOST || '127.0.0.1';
+if (!['127.0.0.1', '::1', 'localhost'].includes(HOST)) throw new Error('AION backend must bind to loopback');
 setResourcePolicy(loadConfig().resourcePolicy || 'balanced');
 
 const server = http.createServer(handleRequest);

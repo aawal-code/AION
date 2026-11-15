@@ -61,9 +61,9 @@ export function parseTailscaleStatus(jsonStr) {
       hostname: hostname || null,
       dnsName: dnsName || null,
       certDomains,
-      httpsSupported: Boolean(dnsName),
-      httpsUrl: dnsName ? `https://${dnsName}` : null,
-      httpUrl: ipv4 ? `http://${ipv4}:5050` : null,
+      httpsSupported: false,
+      httpsUrl: null,
+      httpUrl: null,
     };
   } catch (err) {
     logEvent('WARN', `Failed to parse Tailscale JSON: ${err.message}`);
@@ -149,7 +149,7 @@ export async function getTailscaleHttpsStatus() {
   const dnsName = mesh.dnsName || null;
   const ipv4 = mesh.ipv4 || null;
   return {
-    supported: Boolean(dnsName),
+    supported: false,
     dnsName,
     httpsUrl: dnsName ? `https://${dnsName}` : null,
     httpUrl: ipv4 ? `http://${ipv4}:5050` : null,
