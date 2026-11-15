@@ -15,7 +15,7 @@ test('Master spec §1/§2: real WebView2 private page uses child IPC and blocks 
   assert.ok(cache, 'verified WebView2 build dependencies are required');
   for (const name of ['Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll', 'WebView2Loader.dll']) fs.copyFileSync(path.join(cache, name), path.join(tmp, name));
   const exe = path.join(tmp, 'WebViewHarness.exe');
-  const build = spawnSync(csc, ['/nologo', '/target:exe', `/out:${exe}`, '/r:System.dll', '/r:System.Core.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll', `/r:${path.join(tmp, 'Microsoft.Web.WebView2.Core.dll')}`, `/r:${path.join(tmp, 'Microsoft.Web.WebView2.WinForms.dll')}`, path.resolve('tests/fixtures/private-webview/PrivateWebViewHarness.cs')], { encoding: 'utf8', windowsHide: true });
+  const build = spawnSync(csc, ['/nologo', '/target:exe', `/out:${exe}`, '/r:System.dll', '/r:System.Core.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll', '/r:System.Web.Extensions.dll', `/r:${path.join(tmp, 'Microsoft.Web.WebView2.Core.dll')}`, `/r:${path.join(tmp, 'Microsoft.Web.WebView2.WinForms.dll')}`, path.resolve('scripts/win/NativeIpcClient.cs'), path.resolve('tests/fixtures/private-webview/PrivateWebViewHarness.cs')], { encoding: 'utf8', windowsHide: true });
   assert.equal(build.status, 0, `${build.stdout}\n${build.stderr}`);
   let connections = 0;
   const attacker = http.createServer((req, res) => { res.end('unexpected'); });

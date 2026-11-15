@@ -5,8 +5,10 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Web.Script.Serialization;
 using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Web.WebView2.Core;
+using AION.Desktop;
 
 // Standalone acceptance harness, never included in the production build.
 internal sealed class PrivateWebViewHarness : Form
@@ -18,6 +20,7 @@ internal sealed class PrivateWebViewHarness : Form
     private readonly bool simulateCrash;
     private readonly WebView2 view = new WebView2();
     private Process backend;
+    private NativeIpcClient client;
     private readonly SemaphoreSlim ipc = new SemaphoreSlim(1, 1);
     private bool authenticatedOperation, disconnected;
 
@@ -29,7 +32,7 @@ internal sealed class PrivateWebViewHarness : Form
         var timeout = new System.Windows.Forms.Timer(); timeout.Interval = 20000;
         timeout.Tick += (s, e) => { Console.Error.WriteLine("TIMEOUT"); Environment.Exit(4); }; timeout.Start();
         Shown += async (s, e) => await Run();
-        FormClosed += (s, e) => { try { if (backend != null && !backend.HasExited) backend.Kill(); } catch { } };
+        FormClosed += (s, e) => { if (client != null) client.Dispose(); try { if (backend != null && !backend.HasExited) backend.Kill(); } catch { } };
     }
 
     private async Task Run()
@@ -47,6 +50,7 @@ internal sealed class PrivateWebViewHarness : Form
             Console.WriteLine("BACKEND_PID " + backend.Id);
             Task<string> ready = backend.StandardOutput.ReadLineAsync();
             if (await Task.WhenAny(ready, Task.Delay(10000)) != ready || await ready != "READY") throw new Exception("Backend unavailable");
+            client = new NativeIpcClient(backend.StandardOutput.BaseStream, backend.StandardInput.BaseStream);
             var env = await CoreWebView2Environment.CreateAsync(null, profile);
             await view.EnsureCoreWebView2Async(env);
             view.CoreWebView2.Settings.AreDevToolsEnabled = false;
@@ -104,11 +108,9 @@ internal sealed class PrivateWebViewHarness : Form
                 try
                 {
                     if (backend == null || backend.HasExited) throw new Exception("Backend unavailable");
-                    await backend.StandardInput.WriteLineAsync("LIST"); await backend.StandardInput.FlushAsync();
-                    Task<string> result = backend.StandardOutput.ReadLineAsync();
-                    if (await Task.WhenAny(result, Task.Delay(5000)) != result) throw new Exception("IPC timeout");
-                    string json = await result;
-                    if (backend.HasExited || json == null || json.Length > 65536 || !json.StartsWith("{\"status\":\"ok\"")) throw new Exception("IPC failure");
+                    var result = await client.CallAsync("identity.devices", null, 5000, CancellationToken.None);
+                    if (backend.HasExited || !(bool)result["ok"] || !result.ContainsKey("result")) throw new Exception("IPC failure");
+                    string json = new JavaScriptSerializer { MaxJsonLength = 65536 }.Serialize(result["result"]);
                     authenticatedOperation = true;
                     e.Response = view.CoreWebView2.Environment.CreateWebResourceResponse(new MemoryStream(Encoding.UTF8.GetBytes(json)), 200, "OK", "Content-Type: application/json\r\nCache-Control: no-store\r\n");
                 }
