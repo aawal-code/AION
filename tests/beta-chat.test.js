@@ -90,12 +90,14 @@ test('Master spec §2/§5/§6: authenticated chat persists project-bound convers
   response = await post(`/api/assistant/tasks/${task.id}/run`, {}, h); assert.equal(response.status, 409);
   response = await post(`/api/assistant/tasks/${task.id}/approve`, {}, { cookie: jar, origin, 'content-type': 'application/json' }); assert.equal(response.status, 403);
   const trustedKey = crypto.generateKeyPairSync('ed25519');
-  const { createDevice } = await import('../src/services/identity-store.js'); const trusted = await createDevice({ name: 'Limited task user', role: 'trusted', publicKey: trustedKey.publicKey.export({ type: 'spki', format: 'pem' }), capabilities: ['conversation:write'] }, { role: 'owner', deviceId: owner.deviceId });
+  const { createDevice } = await import('../src/services/identity-store.js'); const trusted = await createDevice({ name: 'Limited task user', role: 'trusted', publicKey: trustedKey.publicKey.export({ type: 'spki', format: 'pem' }), capabilities: ['conversation:write', 'system:read'] }, { role: 'owner', deviceId: owner.deviceId });
   const challenge2 = await (await post('/api/auth/challenge', { deviceId: trusted.id }, { origin, 'content-type': 'application/json' })).json();
   const sign2 = crypto.sign(null, Buffer.from(challenge2.signingPayload), trustedKey.privateKey).toString('base64url');
   const auth2 = await post('/api/auth/authenticate', { challengeId: challenge2.challengeId, signature: sign2 }, { origin, 'content-type': 'application/json' });
   const jar2 = cookies(auth2), csrf2 = /aion_csrf=([^;]+)/.exec(jar2)[1]; response = await post(`/api/assistant/tasks/${task.id}/approve`, {}, headers(jar2, csrf2)); assert.equal(response.status, 403);
   response = await post(`/api/assistant/projects/${project.id}/folders`, { path: folderPath }, headers(jar2, csrf2)); assert.equal(response.status, 403);
+  for (const [route, body] of [['/api/ai', { prompt: 'lock' }], ['/api/command', { action: 'lock' }], ['/api/system/apps/kill', { name: 'example' }], ['/api/sync/folder', { path: folderPath }], ['/api/sync/device', {}], ['/api/sync/trigger', {}], ['/api/devices/local/command', { action: 'lock' }]]) { response = await post(route, body, h); assert.equal(response.status, 503, route); }
+  response = await post('/api/ai', { prompt: 'lock' }, headers(jar2, csrf2)); assert.equal(response.status, 503);
   response = await post(`/api/assistant/tasks/${task.id}/approve`, {}, h); assert.equal(response.status, 200);
   response = await post(`/api/assistant/tasks/${task.id}/run`, { input: 'changed' }, h); assert.equal(response.status, 409);
   response = await post(`/api/assistant/tasks/${task.id}/run`, {}, h); assert.equal(response.status, 200);

@@ -838,6 +838,15 @@ export async function handleRequest(req, res) {
     if (!(await authorizeApiRequest(req, res, urlPath))) return;
   }
 
+  // Legacy routes can invoke actions without a scoped, one-time approval. Keep
+  // them contained until a capability-checked action replaces each route.
+  const blockedLegacyAction = req.method === 'POST' && (
+    ['/api/command', '/api/ai', '/api/system/apps/kill', '/api/system/wol/enable'].includes(urlPath) ||
+    /^\/api\/devices\/[^/]+\/(command|wake)$/.test(urlPath) ||
+    ['/api/sync/folder', '/api/sync/device', '/api/sync/trigger'].includes(urlPath)
+  );
+  if (blockedLegacyAction) return sendJson(res, 503, { status: 'disabled', error: 'This action is unavailable until scoped approval is supported.' });
+
   // Workstation Configuration & Execution Target Persistence
   if (urlPath === '/api/config') {
     if (req.method === 'GET') return handleGetConfig(req, res);
