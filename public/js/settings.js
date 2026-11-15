@@ -1,7 +1,8 @@
 /**
  * AION Settings & Preferences Module
- * 4-Tab Preferences Modal: General, Network & Access, API Vault & Execution, Interface
+ * Preferences Modal: profile, network, credentials, security, and interface.
  */
+import { initSecurity, loadSecurityPanel } from './security.js';
 
 export function showToast(message, iconName = 'check') {
   if (typeof window !== 'undefined' && typeof window.aionShowToast === 'function') {
@@ -119,6 +120,7 @@ export function openSettings(tabName = 'general') {
   renderApiVault();
   renderByocliGrid();
   loadInterfaceSettings();
+  loadSecurityPanel();
 }
 
 /**
@@ -468,47 +470,36 @@ export async function revokeTrustedDevice(deviceId) {
 // 3. API Vault & Execution (API Keys Manager & BYOCLI Profiles)
 // ==========================================================================
 
-export function getApiVault() {
-  try {
-    return JSON.parse(localStorage.getItem('aion_api_vault') || '{}');
-  } catch {
-    return {};
-  }
-}
+// This compatibility accessor never reads browser storage. Credentials remain
+// exclusively in the platform-protected service vault.
+export function getApiVault() { return {}; }
 
 export async function saveApiKey(provider, key) {
-  const vault = getApiVault();
-  if (key && key.trim()) {
-    vault[provider] = key.trim();
-  } else {
-    delete vault[provider];
-  }
-  localStorage.setItem('aion_api_vault', JSON.stringify(vault));
-  renderApiVault();
-
   try {
-    await fetch('/api/assistant/vault', {
+    const response = await fetch('/api/assistant/vault', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-AION-CSRF': decodeURIComponent((document.cookie.split('; ').find((part) => part.startsWith('aion_csrf=')) || '').slice(10)) },
       body: JSON.stringify({ provider, key: key || '' }),
     });
-  } catch (_) {}
-
-  showToast(`${provider} key updated`, 'check');
+    if (!response.ok) throw new Error((await response.json()).error || 'Credential update failed');
+    await renderApiVault();
+    showToast(`${provider} key updated`, 'check');
+  } catch (error) { showToast(error.message || 'Credential update failed', 'alert'); }
 }
 
-export function renderApiVault() {
+export async function renderApiVault() {
   const container = document.getElementById('apiVaultList');
   if (!container) return;
-
-  const vault = getApiVault();
+  let vault = {};
+  try {
+    const response = await fetch('/api/assistant/vault');
+    if (!response.ok) throw new Error((await response.json()).error || 'Vault unavailable');
+    vault = (await response.json()).vault || {};
+  } catch (error) { container.textContent = `${error.message}. Sign in as an Owner to manage protected credentials.`; return; }
 
   container.innerHTML = API_PROVIDERS.map((provider) => {
-    const currentKey = vault[provider.id] || '';
-    const hasKey = currentKey.length > 0;
-    const masked = hasKey
-      ? `${currentKey.slice(0, 6)}••••••••${currentKey.slice(-4)}`
-      : 'Not configured';
+    const entry = vault[provider.id] || {};
+    const hasKey = Boolean(entry.configured);
 
     return `
       <div class="api-vault-item">
@@ -519,12 +510,11 @@ export function renderApiVault() {
               ${hasKey ? 'Configured' : 'Missing'}
             </span>
           </div>
-          <span style="font-size: 11.5px; font-family: var(--font-mono); color: var(--text-secondary);">${masked}</span>
+          <span style="font-size: 11.5px; color: var(--text-secondary);">${entry.masked || 'Not configured'}</span>
         </div>
         <div style="display: flex; gap: 6px;">
-          <button class="btn-secondary btn-set-api-key" data-provider="${provider.id}" style="padding: 4px 10px; font-size: 11.5px;" type="button">
-            ${hasKey ? 'Edit' : 'Add Key'}
-          </button>
+          <input class="modal-input api-key-entry" data-provider="${provider.id}" type="password" autocomplete="off" placeholder="${provider.placeholder}" aria-label="${provider.name} credential" style="width: 150px; padding: 4px 8px; font-size: 11.5px;">
+          <button class="btn-secondary btn-set-api-key" data-provider="${provider.id}" style="padding: 4px 10px; font-size: 11.5px;" type="button">Save</button>
           ${hasKey ? `<button class="btn-secondary btn-clear-api-key" data-provider="${provider.id}" style="padding: 4px 8px; font-size: 11.5px; color: var(--color-danger);" type="button">Remove</button>` : ''}
         </div>
       </div>
@@ -535,21 +525,15 @@ export function renderApiVault() {
   container.querySelectorAll('.btn-set-api-key').forEach((btn) => {
     btn.addEventListener('click', () => {
       const providerId = btn.getAttribute('data-provider');
-      const provider = API_PROVIDERS.find((p) => p.id === providerId);
-      const current = vault[providerId] || '';
-      const newKey = window.prompt(`Enter API Key for ${provider?.name || providerId}:`, current);
-      if (newKey !== null) {
-        saveApiKey(providerId, newKey);
-      }
+      const input = container.querySelector(`.api-key-entry[data-provider="${providerId}"]`);
+      if (input?.value) saveApiKey(providerId, input.value);
     });
   });
 
   container.querySelectorAll('.btn-clear-api-key').forEach((btn) => {
     btn.addEventListener('click', () => {
       const providerId = btn.getAttribute('data-provider');
-      if (window.confirm(`Remove saved key for ${providerId}?`)) {
-        saveApiKey(providerId, '');
-      }
+      saveApiKey(providerId, '');
     });
   });
 }
@@ -810,6 +794,8 @@ export function initSettings() {
       if (targetTab) switchTab(targetTab);
     });
   });
+
+  initSecurity();
 
   // General Save Button
   document.getElementById('btnSaveGeneralProfile')?.addEventListener('click', saveGeneralProfile);
