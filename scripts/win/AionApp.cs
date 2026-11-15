@@ -53,7 +53,11 @@ namespace AION.Desktop
             bool isNewInstance = false;
             try
             {
-                singleInstanceMutex = new Mutex(true, MUTEX_NAME, out isNewInstance);
+                // Test installations can opt into a distinct mutex without
+                // weakening the normal single-window production instance.
+                string instanceId = Environment.GetEnvironmentVariable("AION_INSTANCE_ID") ?? "";
+                string mutexName = string.IsNullOrWhiteSpace(instanceId) ? MUTEX_NAME : MUTEX_NAME + "_" + instanceId;
+                singleInstanceMutex = new Mutex(true, mutexName, out isNewInstance);
             }
             catch
             {
@@ -178,6 +182,7 @@ namespace AION.Desktop
         private string rootDir;
         private string nodePath;
         private string serverJs;
+        private readonly string hostPort;
         private bool isExiting = false;
         private bool isNodeRestarting = false;
         private readonly string localAuthSecret = CreateLocalAuthSecret();
@@ -195,6 +200,9 @@ namespace AION.Desktop
         public MainWindow(string[] args)
         {
             this.appDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
+            string requestedPort = Environment.GetEnvironmentVariable("AION_PORT");
+            int validatedPort;
+            this.hostPort = Int32.TryParse(requestedPort, out validatedPort) && validatedPort > 0 && validatedPort < 65536 ? validatedPort.ToString() : "5050";
             ResolvePaths();
 
             InitializeJobObject();
@@ -421,7 +429,7 @@ namespace AION.Desktop
             if (webView != null && webView.CoreWebView2 != null)
             {
                 CoreWebView2WebResourceRequest request = webView.CoreWebView2.Environment.CreateWebResourceRequest(
-                    "http://localhost:5050/api/auth/local-session",
+                    "http://localhost:" + hostPort + "/api/auth/local-session",
                     "GET",
                     null,
                     "X-AION-Local-Secret: " + localAuthSecret
@@ -436,7 +444,7 @@ namespace AION.Desktop
             {
                 try
                 {
-                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:5050/");
+                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + hostPort + "/");
                     req.Timeout = 800;
                     using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
                     {
@@ -473,7 +481,7 @@ namespace AION.Desktop
                         RedirectStandardOutput = false,
                         RedirectStandardError = false
                     };
-                    psi.EnvironmentVariables["PORT"] = "5050";
+                    psi.EnvironmentVariables["PORT"] = hostPort;
                     psi.EnvironmentVariables["NODE_ENV"] = "production";
                     psi.EnvironmentVariables["TS_NOLAUNCH"] = "true";
                     psi.EnvironmentVariables["AION_LOCAL_AUTH_SECRET"] = localAuthSecret;

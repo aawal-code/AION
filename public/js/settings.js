@@ -719,6 +719,28 @@ export function loadInterfaceSettings() {
     btn.classList.toggle('active', btn.getAttribute('data-theme-mode') === savedMode);
   });
   updateDynamicThemeMeta(savedMode);
+  loadResourcePolicy();
+}
+
+async function loadResourcePolicy() {
+  try {
+    const response = await fetch('/api/config');
+    if (!response.ok) return;
+    const policy = (await response.json()).config?.resourcePolicy || 'balanced';
+    document.querySelectorAll('.resource-policy-btn').forEach((button) => button.classList.toggle('active', button.dataset.resourcePolicy === policy));
+    const intervals = { eco: '60 seconds', balanced: '30 seconds', performance: '15 seconds' };
+    const effect = document.getElementById('resourcePolicyEffect');
+    if (effect) effect.textContent = `${policy[0].toUpperCase()}${policy.slice(1)} checks laptop power/network state every ${intervals[policy]}; it creates no extra daemon or idle worker.`;
+  } catch (_) {}
+}
+
+async function setResourcePolicy(mode) {
+  try {
+    const csrf = decodeURIComponent((document.cookie.split('; ').find((part) => part.startsWith('aion_csrf=')) || '').slice(10));
+    const response = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-AION-CSRF': csrf }, body: JSON.stringify({ resourcePolicy: mode }) });
+    if (!response.ok) throw new Error((await response.json()).error || 'Resource policy update failed');
+    await loadResourcePolicy(); showToast(`Resource policy set to ${mode}`, 'check');
+  } catch (error) { showToast(error.message || 'Resource policy update failed', 'alert'); }
 }
 
 export function updateDynamicThemeMeta(mode) {
@@ -831,6 +853,8 @@ export function initSettings() {
       if (mode) setThemeMode(mode);
     });
   });
+
+  document.querySelectorAll('.resource-policy-btn').forEach((btn) => btn.addEventListener('click', () => setResourcePolicy(btn.dataset.resourcePolicy)));
 }
 
 function escapeHtml(str) {

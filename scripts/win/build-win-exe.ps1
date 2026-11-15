@@ -43,7 +43,7 @@ if (Test-Path $FetchScript) {
     & powershell -ExecutionPolicy Bypass -File $FetchScript
 }
 
-$BuildCache = Join-Path $ProjectRoot "build-cache"
+$BuildCache = if ($env:AION_BUILD_CACHE) { $env:AION_BUILD_CACHE } else { Join-Path $ProjectRoot "build-cache" }
 $CoreDll = Join-Path $BuildCache "Microsoft.Web.WebView2.Core.dll"
 $WinFormsDll = Join-Path $BuildCache "Microsoft.Web.WebView2.WinForms.dll"
 $LoaderDll = Join-Path $BuildCache "WebView2Loader.dll"
@@ -53,7 +53,7 @@ if (-not (Test-Path $CoreDll) -or -not (Test-Path $WinFormsDll) -or -not (Test-P
 }
 
 # 3. Ensure dist/ output directory exists
-$DistDir = Join-Path $ProjectRoot "dist"
+$DistDir = if ($env:AION_BUILD_OUTPUT) { $env:AION_BUILD_OUTPUT } else { Join-Path $ProjectRoot "dist" }
 if (-not (Test-Path $DistDir)) {
     New-Item -ItemType Directory -Path $DistDir | Out-Null
 }

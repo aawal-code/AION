@@ -1502,6 +1502,16 @@
 
       <!-- TAB 4: Interface -->
       <div class="settings-tab-panel" id="settingsPanel-interface">
+        <div class="settings-group">
+          <div class="settings-group-title">Resource policy</div>
+          <p class="security-note">Controls the host’s only recurring hardware probe. Identity, authorization, vault writes, and database transactions remain event-driven in every mode.</p>
+          <div class="lang-segmented" aria-label="Resource policy">
+            <button class="lang-btn resource-policy-btn" data-resource-policy="eco" type="button">Eco</button>
+            <button class="lang-btn resource-policy-btn active" data-resource-policy="balanced" type="button">Balanced</button>
+            <button class="lang-btn resource-policy-btn" data-resource-policy="performance" type="button">Performance</button>
+          </div>
+          <p id="resourcePolicyEffect" class="security-note" style="margin-top: 8px;"></p>
+        </div>
         
         <!-- Theme Mode: Light / Dark / Auto -->
         <div class="settings-group">
