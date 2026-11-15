@@ -37,9 +37,9 @@ import { generateQrSvg } from './qr.js';
 import { initDevicesModule, fetchRunningProcesses, renderDevicesView, selectDevice } from './devices.js';
 import { initMediaModule } from './media.js';
 import { initNav } from './nav.js';
-import { initSettings } from './settings.js';
+import { initSettings, openSettings } from './settings.js';
 import { initScreenControl } from './screen-control.js';
-import { initAssistantWorkspace } from './assistant.js';
+import { initAssistantWorkspace, sendAssistantPrompt } from './assistant.js';
 
 // ==========================================================================
 // Service Worker Live Controller Reload (Mobile / Desktop PWA Auto-Refresh)
@@ -396,38 +396,8 @@ async function handleSendMessage(rawText) {
     return;
   }
 
-  // 2. ASSISTANT VIEW: Send directly to AI Assistant Workspace
-  const state = getState();
-  if (state.isAssistantBusy) return;
-
-  addChatMessage('user', text);
-  setAssistantBusy(true);
-  showTypingIndicator(true);
-
-  try {
-    const res = await fetch('/api/assistant/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: text }),
-    });
-
-    const data = await res.json();
-    showTypingIndicator(false);
-    setAssistantBusy(false);
-
-    if (res.ok && (data.response?.content || data.assistantMessage?.content)) {
-      const reply = data.response?.content || data.assistantMessage?.content;
-      addChatMessage('assistant', reply);
-      addActivity(t('chatAssistant'), text.slice(0, 32), 'chat');
-    } else {
-      const err = data.error || t('chatError');
-      addChatMessage('assistant', err, true);
-    }
-  } catch (err) {
-    showTypingIndicator(false);
-    setAssistantBusy(false);
-    addChatMessage('assistant', `${t('chatError')} (${err.message})`, true);
-  }
+  // Route all chat entry points through the project-aware assistant controller.
+  await sendAssistantPrompt(text);
 }
 
 function showTypingIndicator(show) {
@@ -1074,15 +1044,9 @@ async function checkAuthStatus() {
     const data = await res.json();
 
     const pairingModal = document.getElementById('pairingModal');
-    if (!data.authenticated) {
-      if (pairingModal) pairingModal.style.display = 'flex';
-      setupPairingModal();
-    } else {
-      if (pairingModal) pairingModal.style.display = 'none';
-      if (data.pin) {
-        updateSettingsPairing(data.pin);
-      }
-    }
+    if (pairingModal) pairingModal.style.display = 'none';
+    if (!data.authenticated) openSettings('security');
+
   } catch (err) {
     console.warn('Auth status check error:', err);
   }

@@ -8,6 +8,16 @@ import { getSvgIcon } from './icons.js';
 import { showToast } from './app.js';
 import { renderMarkdown } from './markdown.js';
 
+// All mutating requests use the same-origin session's CSRF token.
+function assistantFetch(url, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD'].includes(method)) {
+    const csrf = decodeURIComponent((document.cookie.split('; ').find((item) => item.startsWith('aion_csrf=')) || '').slice(10));
+    options = { ...options, headers: { ...options.headers, 'X-AION-CSRF': csrf } };
+  }
+  return fetch(url, options);
+}
+
 let cachedProjects = [];
 let cachedSessions = [];
 let activeProjectId = 'aion';
@@ -28,6 +38,7 @@ let currentTarget = {
  * Initializes the Assistant Workspace
  */
 export async function initAssistantWorkspace() {
+  window.addEventListener('aion:authenticated', () => { loadProjects(); loadExecutionTarget(); });
   await loadProjects();
   await loadExecutionTarget();
   setupTargetSelector();
@@ -36,7 +47,6 @@ export async function initAssistantWorkspace() {
   setupNewChatButton();
   setupFullscreenChat();
   setupSpeechRecognition();
-  setupCommandBarIntegration();
 }
 
 /**
@@ -44,7 +54,7 @@ export async function initAssistantWorkspace() {
  */
 export async function loadExecutionTarget() {
   try {
-    const res = await fetch('/api/config');
+    const res = await assistantFetch('/api/config');
     if (res.ok) {
       const data = await res.json();
       if (data.config?.executionTarget) {
@@ -124,7 +134,7 @@ export function setupTargetSelector() {
 
 async function persistTarget() {
   try {
-    await fetch('/api/config', {
+    await assistantFetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ executionTarget: currentTarget }),
@@ -137,7 +147,7 @@ async function persistTarget() {
  */
 export async function loadProjects() {
   try {
-    const res = await fetch('/api/assistant/projects');
+    const res = await assistantFetch('/api/assistant/projects');
     if (!res.ok) return;
     const data = await res.json();
     if (data.status === 'ok' && Array.isArray(data.projects)) {
@@ -221,7 +231,7 @@ export function updateProjectHeader() {
  */
 export async function loadProjectMessages(projectId, specificSessionId = null) {
   try {
-    const sessRes = await fetch(`/api/assistant/projects/${encodeURIComponent(projectId)}/sessions`);
+    const sessRes = await assistantFetch(`/api/assistant/projects/${encodeURIComponent(projectId)}/sessions`);
     if (!sessRes.ok) return;
     const sessData = await sessRes.json();
 
@@ -237,7 +247,7 @@ export async function loadProjectMessages(projectId, specificSessionId = null) {
         activeSessionId = selectedSession.id;
         setAssistantMode(selectedSession.mode || 'ask', false);
 
-        const msgRes = await fetch(`/api/assistant/sessions/${encodeURIComponent(activeSessionId)}/messages`);
+        const msgRes = await assistantFetch(`/api/assistant/sessions/${encodeURIComponent(activeSessionId)}/messages`);
         if (msgRes.ok) {
           const msgData = await msgRes.json();
           if (msgData.status === 'ok' && Array.isArray(msgData.messages)) {
@@ -322,7 +332,7 @@ export function renderSessionList() {
       if (!newTitle || !newTitle.trim() || newTitle.trim() === currentTitle) return;
 
       try {
-        const res = await fetch(`/api/assistant/sessions/${encodeURIComponent(sId)}`, {
+        const res = await assistantFetch(`/api/assistant/sessions/${encodeURIComponent(sId)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: newTitle.trim() }),
@@ -345,7 +355,7 @@ export function renderSessionList() {
       if (!window.confirm('Delete this chat thread and its history?')) return;
 
       try {
-        const res = await fetch(`/api/assistant/sessions/${encodeURIComponent(sId)}`, {
+        const res = await assistantFetch(`/api/assistant/sessions/${encodeURIComponent(sId)}`, {
           method: 'DELETE',
         });
         if (res.ok) {
@@ -366,7 +376,7 @@ export function setupNewChatButton() {
 
   btn.addEventListener('click', async () => {
     try {
-      const res = await fetch('/api/assistant/sessions', {
+      const res = await assistantFetch('/api/assistant/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -469,11 +479,11 @@ function setupNewProjectButton() {
     const name = window.prompt('Enter new Project Name (e.g. AION, Core):');
     if (!name || !name.trim()) return;
 
-    const pathVal = window.prompt('Enter Project Working Directory (or leave empty):', process.cwd ? '' : 'C:\\');
+    const pathVal = window.prompt('Enter Project Working Directory (or leave empty):', '');
     const context = window.prompt('Enter Pinned Context / Mission description:', `${name} Workspace`);
 
     try {
-      const res = await fetch('/api/assistant/projects', {
+      const res = await assistantFetch('/api/assistant/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -661,7 +671,7 @@ export async function sendAssistantPrompt(prompt) {
   if (container) container.scrollTop = container.scrollHeight;
 
   try {
-    const res = await fetch('/api/assistant/chat', {
+    const res = await assistantFetch('/api/assistant/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -734,7 +744,7 @@ async function streamExecuteMode(prompt) {
   const cursorEl = terminalEl.querySelector('.terminal-cursor');
 
   try {
-    const res = await fetch('/api/assistant/chat', {
+    const res = await assistantFetch('/api/assistant/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
