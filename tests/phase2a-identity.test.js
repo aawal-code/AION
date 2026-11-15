@@ -36,7 +36,8 @@ test('Master spec §2: identity store enforces signed role sessions, explicit gr
     const invitation = await s.createPairingInvitation({role:'owner',deviceId:enrolled.deviceId});
     assert.match(invitation.qrPayload, /^AION-PAIR:[0-9a-f-]{36}$/);
     const joining = crypto.generateKeyPairSync('ed25519');
-    await s.claimPairingInvitation({invitationId: invitation.invitationId, name:'Synthetic paired device', publicKey:joining.publicKey.export({type:'spki',format:'pem'})});
+    const claim = await s.claimPairingInvitation({invitationId: invitation.invitationId, name:'Synthetic paired device', publicKey:joining.publicKey.export({type:'spki',format:'pem'})});
+    assert.equal(claim.verificationCode, invitation.verificationCode, 'both devices receive the same non-authorizing comparison code');
     await assert.rejects(() => s.claimPairingInvitation({invitationId: invitation.invitationId, name:'replay', publicKey:joining.publicKey.export({type:'spki',format:'pem'})}), /already used|concurrently/i);
     await assert.rejects(() => s.approvePairingInvitation({invitationId: invitation.invitationId, verificationCode:'000000'}, {role:'owner',deviceId:enrolled.deviceId}), /code/i);
     const paired = await s.approvePairingInvitation({invitationId: invitation.invitationId, verificationCode:invitation.verificationCode, role:'limited'}, {role:'owner',deviceId:enrolled.deviceId});

@@ -6,7 +6,7 @@ const DB_PATH = process.env.AION_SECURITY_DB_PATH || path.resolve('data/security
 const SESSION_TTL = 20 * 60_000;
 const CHALLENGE_TTL = 2 * 60_000;
 const BOOTSTRAP_TTL = 5 * 60_000;
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const PAIRING_TTL = 5 * 60_000;
 let dbPromise;
 
@@ -39,13 +39,14 @@ CREATE TABLE IF NOT EXISTS recovery_keys (id INTEGER PRIMARY KEY CHECK(id=1), sa
 CREATE TABLE IF NOT EXISTS audit_events (id TEXT PRIMARY KEY, event TEXT NOT NULL, device_id TEXT, detail TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS desktop_bootstrap_sessions (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT);
 CREATE TABLE IF NOT EXISTS device_capabilities (device_id TEXT NOT NULL, capability TEXT NOT NULL, granted_at TEXT NOT NULL, PRIMARY KEY(device_id, capability), FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE);`);
-      db.exec(`CREATE TABLE IF NOT EXISTS pairing_invitations (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, claimed_at TEXT, claimed_name TEXT, claimed_public_key TEXT, approved_at TEXT, approved_device_id TEXT, cancelled_at TEXT, FOREIGN KEY(created_by) REFERENCES devices(id), FOREIGN KEY(approved_device_id) REFERENCES devices(id));`);
+      db.exec(`CREATE TABLE IF NOT EXISTS pairing_invitations (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL, display_code TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, claimed_at TEXT, claimed_name TEXT, claimed_public_key TEXT, approved_at TEXT, approved_device_id TEXT, cancelled_at TEXT, FOREIGN KEY(created_by) REFERENCES devices(id), FOREIGN KEY(approved_device_id) REFERENCES devices(id));`);
       const meta = db.prepare('SELECT version FROM schema_meta LIMIT 1').get();
       if (!meta) db.prepare('INSERT INTO schema_meta(version) VALUES (?)').run(SCHEMA_VERSION);
       else if (meta.version > SCHEMA_VERSION) throw new Error('Security storage was created by a newer AION version');
       else if (meta.version < SCHEMA_VERSION) {
         db.exec('BEGIN IMMEDIATE');
         try {
+          if (meta.version < 5) db.exec("ALTER TABLE pairing_invitations ADD COLUMN display_code TEXT NOT NULL DEFAULT '';");
           const legacyDevices = db.prepare('SELECT id,role FROM devices WHERE revoked_at IS NULL').all();
           const insert = db.prepare('INSERT OR IGNORE INTO device_capabilities(device_id,capability,granted_at) VALUES (?,?,?)');
           for (const device of legacyDevices) for (const capability of capabilitiesForRole(device.role)) insert.run(device.id, capability, now());
@@ -118,7 +119,7 @@ export async function createDevice({ name: deviceName, publicKey: value, role = 
 export async function createPairingInvitation(actor) {
   if (!actor || actor.role !== ROLES.OWNER) throw new Error('Owner authorization required');
   const db = await database(), id = crypto.randomUUID(), code = pairingCode(), expiresAt = future(PAIRING_TTL);
-  db.prepare('INSERT INTO pairing_invitations(id,code_hash,created_by,created_at,expires_at) VALUES (?,?,?,?,?)').run(id, pairingCodeHash(id, code), actor.deviceId, now(), expiresAt);
+  db.prepare('INSERT INTO pairing_invitations(id,code_hash,display_code,created_by,created_at,expires_at) VALUES (?,?,?,?,?,?)').run(id, pairingCodeHash(id, code), code, actor.deviceId, now(), expiresAt);
   audit(db, 'pairing.invitation.created', actor.deviceId, { invitationId: id, expiresAt });
   return { invitationId: id, verificationCode: code, expiresAt, qrPayload: `AION-PAIR:${id}` };
 }
@@ -129,7 +130,7 @@ export async function claimPairingInvitation({ invitationId, name: deviceName, p
     if (!invitation || invitation.cancelled_at || invitation.approved_at || invitation.claimed_at || Date.parse(invitation.expires_at) <= Date.now()) throw new Error('Pairing invitation is invalid, expired, or already used');
     if (db.prepare('UPDATE pairing_invitations SET claimed_at=?,claimed_name=?,claimed_public_key=? WHERE id=? AND claimed_at IS NULL').run(now(), name(deviceName, 'AION device'), key, invitation.id).changes !== 1) throw new Error('Pairing invitation was claimed concurrently');
     audit(db, 'pairing.invitation.claimed', null, { invitationId: invitation.id }); db.exec('COMMIT');
-    return { invitationId: invitation.id, expiresAt: invitation.expires_at, status: 'pending-owner-approval' };
+    return { invitationId: invitation.id, verificationCode: invitation.display_code, expiresAt: invitation.expires_at, status: 'pending-owner-approval' };
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
 export async function approvePairingInvitation({ invitationId, verificationCode, role = ROLES.LIMITED, capabilities }, actor) {
