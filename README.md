@@ -11,7 +11,7 @@ This source repository is a security-focused development snapshot. It is not a p
 | Desktop host and local PWA shell | Development / local-only |
 | Local device telemetry and media controls | Development |
 | Phase 1 containment | Implemented: loopback-only binding; remote screen control, arbitrary CLI execution, remote plaintext access, and update apply are disabled |
-| Phase 2A identity foundation | Implemented in source: device keys, signed sessions, role capabilities, recovery-key rotation, and audit storage; in-app enrollment/recovery UX remains incomplete |
+| Phase 2A identity foundation | In progress: signed device sessions, scoped desktop bootstrap, in-window enrollment/recovery/device management, and Windows-protected vault code are implemented; native build, localization, and sustained performance validation remain incomplete |
 | Multi-host synchronization | Not implemented as a secure AION protocol |
 | Automations and durable task execution | Not implemented |
 | Public installer or release | Not available |
