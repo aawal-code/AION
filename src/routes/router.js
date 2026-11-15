@@ -46,7 +46,7 @@ import { getVapidPublicKey, saveSubscription, broadcastPush } from '../services/
 import { getMeshStatus, getTailscaleHttpsStatus } from '../services/network.js';
 import { handleSystemRoutes } from './system.js';
 import { handleCommandsRoutes } from './commands.js';
-import { handleAuthRoutes } from './auth.js';
+import { handleAuthRoutes, verifyCsrf } from './auth.js';
 import { handleNetworkRoutes } from './network.js';
 import { handleAssistantRoutes } from './assistant.js';
 import { handleGetConfig, handlePostConfig } from './config.js';
@@ -67,8 +67,6 @@ function requiredCapability(urlPath, method) {
 async function authorizeApiRequest(req, res, urlPath) {
   const capability = requiredCapability(urlPath, req.method);
   if (!capability) return true;
-  // The desktop cookie can only be minted with the native process secret.
-  if (isDesktopSession(req)) { req.aionAuth = { type: 'desktop', role: 'owner', deviceId: 'desktop' }; return true; }
   const context = await authorize(extractToken(req), capability);
   if (!context) {
     return sendJson(res, 401, { status: 'error', error: 'Explicit device session and permission required' });
@@ -643,8 +641,8 @@ export function getMobileGatewayHtml(req) {
  */
 export async function handleRequest(req, res) {
   const origin = req.headers?.origin;
+  const expectedOrigin = `http://${req.headers.host || 'localhost:5050'}`;
   if (origin) {
-    const expectedOrigin = `http://${req.headers.host || 'localhost:5050'}`;
     if (origin !== expectedOrigin) {
       res.writeHead(403, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ status: 'error', error: 'Cross-origin requests are disabled' }));
@@ -658,9 +656,18 @@ export async function handleRequest(req, res) {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const urlPath = parsedUrl.pathname;
 
+  // Cookies are scoped to this loopback origin. A matching Origin plus a
+  // synchronizer token is required before any state change; signed-device
+  // challenge exchange is the sole pre-session exception.
+  const stateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+  const csrfExempt = urlPath === '/api/auth/challenge' || urlPath === '/api/auth/authenticate';
+  if (stateChanging && urlPath.startsWith('/api/') && !csrfExempt && (!origin || origin !== expectedOrigin || !verifyCsrf(req))) {
+    return sendJson(res, 403, { status: 'error', error: 'Same-origin CSRF verification required' });
+  }
+
   // 1. Live SSE Logs Stream (unauthenticated for localhost or authenticated for peers)
   if (urlPath === '/api/logs' && req.method === 'GET') {
-    if (!isAuthenticated(req)) {
+    if (!(await authorizeApiRequest(req, res, urlPath))) {
       return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
     }
     return handleSseConnection(req, res);
@@ -779,7 +786,7 @@ export async function handleRequest(req, res) {
 
     // POST /api/push/subscribe (Requires auth or localhost)
     if (urlPath === '/api/push/subscribe' && req.method === 'POST') {
-      if (!isAuthenticated(req)) {
+      if (!(await authorizeApiRequest(req, res, urlPath))) {
         return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
       }
       try {
@@ -799,7 +806,7 @@ export async function handleRequest(req, res) {
 
     // POST /api/push/send (Requires auth or localhost)
     if (urlPath === '/api/push/send' && req.method === 'POST') {
-      if (!isAuthenticated(req)) {
+      if (!(await authorizeApiRequest(req, res, urlPath))) {
         return sendJson(res, 401, { status: 'error', error: 'Authentication required' });
       }
       try {
