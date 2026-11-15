@@ -35,7 +35,7 @@
 | 6 | Backend-enforced Ask/Plan/Execute with scoped approvals | Partial | `src/routes/assistant.js`, `src/routes/commands.js` | Ask persistence exists; execute/runner intentionally returns disabled. No approval engine. |
 | 6 | Durable task model, selected host, restart-safe execution | Missing | No task-orchestrator persistence | No task/reconciliation tests. |
 | 6 | Parallel-agent coordination and validated integration | Missing | No worker isolation or coordination service | No tests. |
-| 7 | Secure all-host two-way sync with durable manifests/conflicts/retention | Missing | `src/services/syncthing.js` is a legacy integration surface | No AION replication protocol, conflict preservation, tombstones, or 7-day recovery. |
+| 7 | Secure all-host two-way sync with durable manifests/conflicts/retention | Partial | `src/services/replication-store.js` | `tests/replication-store.test.js`; local event identities, acknowledgements, idempotency, and revision conflicts persist transactionally. No transport, file transfer, tombstones, or retention workflow exists. |
 | 7 | Five-minute/event-driven sync and safe file exclusions/indexing separation | Missing | Legacy UI routes only | No tests; must not be inferred from Syncthing status UI. |
 | 8 | Declarative, approved, durable automations | Missing | No automation engine | No tests. |
 | 9 | Weekly verified backups and guided non-destructive restore | Missing | No backup service | No tests. |
@@ -45,7 +45,7 @@
 | 10 | Consent-bound screen control and remote OS actions | Blocked | `src/routes/router.js` | `tests/phase1-containment.test.js`; correctly disabled pending an approved design and secure transport. |
 | 10 | Limited Wake-on-LAN claims | Partial | `src/services/wol.js`, `src/routes/router.js` | Existing tests cover local detection; remote internet guarantees are not made. |
 | 11 | Required modular-monolith conceptual boundaries | Partial | `src/` services/routes | Identity/local API/desktop shell exist; approval, tasks, sync, automations, search, backups and PWA-client boundary are absent. |
-| 11 | SQLite transactional schemas and authorized structured replication | Partial | `src/services/identity-store.js`, `src/services/assistant-db.js` | Identity has schema version/WAL; remaining state is mixed and replication is absent. |
+| 11 | SQLite transactional schemas and authorized structured replication | Partial | `src/services/identity-store.js`, `src/services/assistant-db.js`, `src/services/replication-store.js` | Identity and replication ledgers use schema-versioned SQLite/WAL transactions; authorization-bound exchange transport is still absent. |
 | 11 | Redacted, bounded logging and event-driven resource budgets | Partial | `src/services/sse.js`, `src/services/telemetry.js` | No formal redaction/retention policy or bounded resource scheduler. |
 | 13 | Accurate README/status/assets/license/release gates | Partial | `README.md`, `docs/assets/ASSET_MANIFEST.md` | Status is conservative, but README is not yet the specified product-first release README and no OSI license is selected. |
 | 13–14 | Tested, privacy-scanned Conventional Commit workflow and source-of-truth policy | Implemented | `AGENTS.md`, `docs/AION_MASTER_SPEC.md`, `.gitignore` | Process files added in this milestone; ongoing adherence is required. |
