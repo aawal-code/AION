@@ -51,11 +51,11 @@ namespace AION.Desktop
             WM_AION_RESTORE = RegisterWindowMessage("AION_RESTORE_WINDOW_SIGNAL");
 
             bool isNewInstance = false;
+            string instanceId = Environment.GetEnvironmentVariable("AION_INSTANCE_ID") ?? "";
             try
             {
                 // Test installations can opt into a distinct mutex without
                 // weakening the normal single-window production instance.
-                string instanceId = Environment.GetEnvironmentVariable("AION_INSTANCE_ID") ?? "";
                 string mutexName = string.IsNullOrWhiteSpace(instanceId) ? MUTEX_NAME : MUTEX_NAME + "_" + instanceId;
                 singleInstanceMutex = new Mutex(true, mutexName, out isNewInstance);
             }
@@ -69,12 +69,12 @@ namespace AION.Desktop
                 // Signal existing instance to restore & focus
                 try
                 {
-                    if (WM_AION_RESTORE != 0)
+                    if (String.IsNullOrWhiteSpace(instanceId) && WM_AION_RESTORE != 0)
                     {
                         PostMessage((IntPtr)0xffff /* HWND_BROADCAST */, WM_AION_RESTORE, IntPtr.Zero, IntPtr.Zero);
                     }
 
-                    IntPtr existingHwnd = FindWindow(null, "AION");
+                    IntPtr existingHwnd = String.IsNullOrWhiteSpace(instanceId) ? FindWindow(null, "AION") : IntPtr.Zero;
                     if (existingHwnd != IntPtr.Zero)
                     {
                         ShowWindow(existingHwnd, 9 /* SW_RESTORE */);
@@ -339,7 +339,7 @@ namespace AION.Desktop
             ToolStripMenuItem openItem = new ToolStripMenuItem("Open AION", null, (s, e) => RestoreWindow());
             openItem.Font = new Font(openItem.Font, FontStyle.Bold);
 
-            ToolStripMenuItem pairItem = new ToolStripMenuItem("Pairing PIN / QR", null, (s, e) => ShowPairingDialog());
+            ToolStripMenuItem pairItem = new ToolStripMenuItem("Security & pairing", null, (s, e) => ShowPairingDialog());
             ToolStripMenuItem restartItem = new ToolStripMenuItem("Restart Core", null, (s, e) => RestartNodeCore());
             ToolStripSeparator sep = new ToolStripSeparator();
             ToolStripMenuItem exitItem = new ToolStripMenuItem("Exit", null, (s, e) => ExitApplication());
@@ -368,11 +368,10 @@ namespace AION.Desktop
             webView.DefaultBackgroundColor = Color.FromArgb(11, 17, 32);
             this.Controls.Add(webView);
 
-            string userDataFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "AION",
-                "webview2-data"
-            );
+            string overrideData = Environment.GetEnvironmentVariable("AION_WEBVIEW2_DATA_PATH");
+            string userDataFolder = String.IsNullOrWhiteSpace(overrideData)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AION", "webview2-data")
+                : Path.GetFullPath(overrideData);
             Directory.CreateDirectory(userDataFolder);
 
             try
@@ -667,7 +666,7 @@ namespace AION.Desktop
             // Open pairing modal in webview or show prompt
             if (webView != null && webView.CoreWebView2 != null)
             {
-                webView.CoreWebView2.ExecuteScriptAsync("if (window.openPairingModal) window.openPairingModal(); else window.location.hash = '#pairing';");
+                webView.CoreWebView2.ExecuteScriptAsync("if (window.aionOpenSecurity) window.aionOpenSecurity();");
             }
         }
 
