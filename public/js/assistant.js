@@ -679,8 +679,8 @@ export async function sendAssistantPrompt(prompt) {
     const data = await res.json();
     loadingEl.remove();
 
+    if (data.sessionId) activeSessionId = data.sessionId;
     if (res.ok && data.status === 'ok') {
-      if (data.sessionId) activeSessionId = data.sessionId;
       const assistantEl = document.createElement('div');
       assistantEl.className = 'chat-message assistant-message';
       assistantEl.innerHTML = `

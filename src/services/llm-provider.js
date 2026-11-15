@@ -24,6 +24,7 @@ export const DEFAULT_MODELS = {
  */
 export async function resolveActiveProvider(preferredProvider = null) {
   const allProviders = ['cerebras', 'anthropic', 'openai', 'groq', 'gemini', 'ollama'];
+  if (preferredProvider != null && (typeof preferredProvider !== 'string' || !allProviders.includes(preferredProvider.toLowerCase()))) throw new Error('Unsupported AI provider');
   const providersToCheck = preferredProvider
     ? [preferredProvider.toLowerCase()]
     : allProviders;
@@ -32,17 +33,6 @@ export async function resolveActiveProvider(preferredProvider = null) {
     const key = await getApiKey(prov);
     if (key && key.trim()) {
       return { provider: prov, apiKey: key.trim() };
-    }
-  }
-
-  // If preferred was specified but has no key, check others as fallback
-  if (preferredProvider) {
-    for (const prov of allProviders) {
-      if (prov === preferredProvider.toLowerCase()) continue;
-      const key = await getApiKey(prov);
-      if (key && key.trim()) {
-        return { provider: prov, apiKey: key.trim() };
-      }
     }
   }
 
@@ -66,9 +56,8 @@ export async function routePrompt({
 
   const { provider, apiKey } = await resolveActiveProvider(requestedProvider);
 
-  // If no external LLM key is configured in the vault, provide intelligent local fallback
   if (!provider || !apiKey) {
-    return generateLocalResponse({ prompt, mode, pinnedContext });
+    const error = new Error('The selected AI provider is not configured. Add its credential in Settings.'); error.statusCode = 503; throw error;
   }
 
   const model = requestedModel || DEFAULT_MODELS[provider] || 'llama3.3-70b';
@@ -88,7 +77,7 @@ export async function routePrompt({
     });
   }
 
-  return generateLocalResponse({ prompt, mode, pinnedContext });
+  throw new Error('Unsupported AI provider');
 }
 
 /**
@@ -132,17 +121,18 @@ async function callOpenAiCompatible({ endpoint, provider, prompt, systemPrompt, 
       messages,
       temperature: 0.4,
     }),
+    signal: AbortSignal.timeout(60_000),
   });
 
   const data = await res.json();
 
   if (!res.ok) {
-    const errMsg = data.error?.message || `HTTP ${res.status} from ${provider}`;
-    logEvent('ERROR', `LLM ${provider} error: ${errMsg}`);
-    throw new Error(`${provider} API Error: ${errMsg}`);
+    logEvent('ERROR', `LLM ${provider} request failed with HTTP ${res.status}`);
+    throw new Error(`${provider} request failed (HTTP ${res.status})`);
   }
 
-  const content = data.choices?.[0]?.message?.content || '';
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) throw new Error('AI provider returned an empty response');
   return {
     provider,
     model,
@@ -177,49 +167,22 @@ async function callAnthropic({ prompt, systemPrompt, model, apiKey, history = []
       messages,
       temperature: 0.4,
     }),
+    signal: AbortSignal.timeout(60_000),
   });
 
   const data = await res.json();
 
   if (!res.ok) {
-    const errMsg = data.error?.message || `HTTP ${res.status} from Anthropic`;
-    logEvent('ERROR', `LLM Anthropic error: ${errMsg}`);
-    throw new Error(`Anthropic API Error: ${errMsg}`);
+    logEvent('ERROR', `LLM Anthropic request failed with HTTP ${res.status}`);
+    throw new Error(`Anthropic request failed (HTTP ${res.status})`);
   }
 
-  const content = data.content?.[0]?.text || '';
+  const content = data.content?.filter((item) => item.type === 'text').map((item) => item.text).join('') || '';
+  if (!content.trim()) throw new Error('AI provider returned an empty response');
   return {
     provider: 'anthropic',
     model,
     content,
     usage: data.usage || null,
-  };
-}
-
-/**
- * Intelligent local response when no external API key is configured
- */
-function generateLocalResponse({ prompt, mode, pinnedContext }) {
-  const cleanPrompt = prompt.trim();
-
-  if (mode === 'plan') {
-    return {
-      provider: 'local-zero-ai',
-      model: 'aion-planner-v1',
-      content: `### Execution Plan: "${cleanPrompt}"\n\n` +
-        `1. **Analyze Requirements & Dependencies**\n   - Scope: Target ${pinnedContext || 'active workspace'}\n   - Verify CLI tools and dependencies are available\n\n` +
-        `2. **Architecture Implementation**\n   - Execute core logic changes\n   - Validate file system permissions and path safety\n\n` +
-        `3. **Verification & Testing**\n   - Run regression and unit test suites\n   - Verify stdout/stderr logs and state persistence\n\n` +
-        `*(To connect live cloud models like Claude 3.5 Sonnet or GPT-4o, configure your API key in Preferences → API Vault)*`,
-      usage: { promptTokens: cleanPrompt.length, completionTokens: 80 },
-    };
-  }
-
-  return {
-    provider: 'local-zero-ai',
-    model: 'aion-assistant-v1',
-    content: `I received your prompt: "${cleanPrompt}".\n\n` +
-      `AION Assistant is running locally. You can execute tasks directly via BYOCLI in **Execute** mode, or connect **OpenAI**, **Anthropic**, or **Groq** by adding your API key in **Preferences → API Vault**.`,
-    usage: { promptTokens: cleanPrompt.length, completionTokens: 60 },
   };
 }

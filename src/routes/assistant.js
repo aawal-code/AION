@@ -181,41 +181,33 @@ export async function handleAssistantRoutes(req, res, urlPath) {
         return sendJson(res, 400, { status: 'error', error: 'Prompt is required' });
       }
 
-      // Ensure active session exists
-      let sessionId = clientSessionId;
-      if (!sessionId) {
-        const newSess = await createSession({ projectId, mode });
-        sessionId = newSess.id;
-      }
-
-      // 1. Record User Message
-      const userMessage = await addMessage({
-        sessionId,
-        role: 'user',
-        content: prompt.trim(),
-        metadata: { mode, runtimeMode, cliProfile, provider, model },
-      });
-
-      // 2. Route based on mode and runtime
-      if (mode === 'execute' && runtimeMode !== 'api') {
-        return sendJson(res, 503, {
-          status: 'disabled',
-          error: 'CLI execution is disabled pending an approved, sandboxed task runner.',
-        });
-      }
-
-      // Mode: 'ask' or 'plan' or (mode === 'execute' && runtimeMode === 'api') -> Route through LLM Provider
+      if (!['ask', 'plan'].includes(mode)) return sendJson(res, mode === 'execute' ? 503 : 400, { status: 'disabled', error: 'Execution is disabled pending a scoped, approved task runner.' });
+      if (runtimeMode !== 'api') return sendJson(res, 400, { status: 'error', error: 'Choose a configured API provider for chat. CLI execution is disabled.' });
+      if (prompt.length > 32000) return sendJson(res, 400, { status: 'error', error: 'Prompt is too long' });
       const project = await getProject(projectId);
+      if (!project) return sendJson(res, 404, { status: 'error', error: 'Project not found' });
+      let sessionId = clientSessionId;
+      if (sessionId) {
+        const session = await getSession(sessionId);
+        if (!session || session.project_id !== projectId) return sendJson(res, 400, { status: 'error', error: 'Conversation does not belong to this project' });
+      } else {
+        const newSess = await createSession({ projectId, mode }); sessionId = newSess.id;
+      }
       const history = await getMessages(sessionId);
+      const userMessage = await addMessage({ sessionId, role: 'user', content: prompt.trim(), metadata: { mode, runtimeMode, provider, model } });
 
-      const llmResult = await routePrompt({
+      let llmResult;
+      try { llmResult = await routePrompt({
+
         prompt: prompt.trim(),
         mode,
         provider,
         model,
         pinnedContext: project?.pinned_context || '',
         history,
-      });
+      }); } catch (error) {
+        return sendJson(res, error.statusCode || 502, { status: 'error', error: error.message, sessionId, userMessage });
+      }
 
       // 3. Record Assistant Response
       const assistantMessage = await addMessage({

@@ -1,9 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { logEvent } from './sse.js';
 
 const DATA_DIR = path.resolve('data');
-const DB_PATH = path.join(DATA_DIR, 'assistant.sqlite');
+const DB_PATH = process.env.AION_ASSISTANT_DB_PATH || path.join(DATA_DIR, 'assistant.sqlite');
 
 let dbInstance = null;
 
@@ -34,6 +35,7 @@ export async function getDb(customPath = null) {
   }
 
   dbInstance = new DatabaseConstructor(targetPath);
+  dbInstance.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
   initSchema(dbInstance);
   return dbInstance;
 }
@@ -119,14 +121,12 @@ export async function getProject(id) {
 
 export async function createProject({ id, name, path: projPath = '', pinned_context = '' }) {
   const db = await getDb();
-  const projId = id || name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+  if (typeof name !== 'string' || !name.trim() || name.length > 160 || typeof projPath !== 'string' || projPath.length > 2048 || typeof pinned_context !== 'string' || pinned_context.length > 32000) throw new Error('Invalid project details');
+  const projId = id || randomUUID();
+  if (typeof projId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(projId)) throw new Error('Invalid project id');
   db.prepare(`
     INSERT INTO projects (id, name, path, pinned_context)
     VALUES (?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      name = excluded.name,
-      path = excluded.path,
-      pinned_context = excluded.pinned_context
   `).run(projId, name, projPath, pinned_context);
 
   return getProject(projId);
@@ -194,7 +194,7 @@ export async function getMessages(sessionId) {
   return db.prepare(`
     SELECT * FROM messages
     WHERE session_id = ?
-    ORDER BY timestamp ASC
+    ORDER BY timestamp ASC, rowid ASC
   `).all(sessionId);
 }
 
