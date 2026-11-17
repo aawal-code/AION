@@ -51,6 +51,18 @@ test('Master spec §1/§2/§5: native IPC dispatcher preserves Owner authorizati
   const authenticated = await request('POST', '/api/auth/authenticate', { headers: { origin: NATIVE_ORIGIN, 'content-type': 'application/json' }, body: { challengeId: challenge.data.challengeId, signature } }); assert.equal(authenticated.status, 200);
   const cookies = authenticated.headers['set-cookie'].map(value => value.split(';')[0]).filter(value => !value.startsWith('aion_bootstrap=')).join('; ');
   const csrf = /aion_csrf=([^;]+)/.exec(cookies)[1]; const signed = { cookie: cookies, origin: NATIVE_ORIGIN, 'x-aion-csrf': csrf, 'content-type': 'application/json' };
+  assert.equal((await request('POST', '/api/auth/browser-pairing/invitations', { headers: { ...signed, 'x-aion-csrf': 'wrong' }, body: { hostname: 'example.example.ts.net' } })).status, 403);
+  const invite = await request('POST', '/api/auth/browser-pairing/invitations', { headers: signed, body: { hostname: 'example.example.ts.net', role: 'trusted' } });
+  assert.equal(invite.status, 201);
+  const browserStore = await import('../src/services/identity-store.js');
+  const browserChallenge = await browserStore.getBrowserPairingChallenge(invite.data.invitationId, 'example.example.ts.net');
+  const browserKey = crypto.generateKeyPairSync('ed25519'), browserPublic = browserKey.publicKey.export({ type: 'spki', format: 'pem' });
+  const browserHash = crypto.createHash('sha256').update(browserPublic).digest('hex');
+  const proof = `aion-browser-pairing-v1:${invite.data.invitationId}:example.example.ts.net:trusted:${browserChallenge.challenge}:${browserHash}`;
+  const pending = await browserStore.claimBrowserPairingInvitation({ invitationId: invite.data.invitationId, hostname: 'example.example.ts.net', publicKey: browserPublic, signature: crypto.sign(null, Buffer.from(proof), browserKey.privateKey).toString('base64url') });
+  const ownerRequests = await request('GET', '/api/auth/browser-pairing/invitations', { headers: { cookie: cookies } });
+  assert.equal(ownerRequests.data.requests[0].verificationCode, pending.verificationCode);
+  assert.equal((await request('POST', `/api/auth/browser-pairing/${invite.data.invitationId}/approve`, { headers: signed, body: { verificationCode: pending.verificationCode } })).status, 201);
   assert.equal((await request('POST', '/api/assistant/projects', { headers: { ...signed, 'x-aion-csrf': 'wrong' }, body: { name: 'Denied' } })).status, 403);
   const project = await request('POST', '/api/assistant/projects', { headers: signed, body: { name: 'IPC project' } }); assert.equal(project.status, 201);
   const projects = await request('GET', '/api/assistant/projects', { headers: { cookie: cookies } }); assert.ok(projects.data.projects.some(p => p.name === 'IPC project'));

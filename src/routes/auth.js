@@ -6,6 +6,7 @@ import {
   getDesktopBootstrapContext, getIdentityStatus, issueDesktopBootstrap, listAuditEvents,
   listPairingInvitations, listSessions, recoverOwner, revokeDevice, revokeSession, rotateRecoveryKey,
   createPairingInvitation, claimPairingInvitation, approvePairingInvitation, getPairingInvitationStatus,
+  createBrowserPairingInvitation, listBrowserPairingRequests, approveBrowserPairingInvitation, cancelBrowserPairingInvitation,
 } from '../services/identity-store.js';
 
 export function readJsonBody(req, maxSize = 64 * 1024) {
@@ -82,6 +83,27 @@ export async function handleAuthRoutes(req, res, urlPath) {
   }
   if (urlPath === '/api/auth/challenge' && req.method === 'POST') { try { return sendJson(res, 200, { status: 'ok', ...(await createChallenge((await readJsonBody(req)).deviceId)) }); } catch (err) { return error(res, err); } }
   if (urlPath === '/api/auth/authenticate' && req.method === 'POST') return authenticate(req, res);
+  // Owner-facing browser pairing administration. The mobile claim endpoint is
+  // deliberately separate and is not exposed through the desktop dispatcher.
+  if (urlPath === '/api/auth/browser-pairing/invitations' && ['POST', 'GET'].includes(req.method)) {
+    const actor = await identityContext(req, 'identity:manage');
+    if (!actor) return sendJson(res, 403, { status: 'error', error: 'Owner authorization required' });
+    try {
+      if (req.method === 'GET') return sendJson(res, 200, { status: 'ok', requests: await listBrowserPairingRequests(actor) });
+      const { hostname, role } = await readJsonBody(req, 4096);
+      return sendJson(res, 201, { status: 'ok', ...(await createBrowserPairingInvitation({ hostname, role }, actor)) });
+    } catch (err) { return error(res, err); }
+  }
+  const browserPairing = urlPath.match(/^\/api\/auth\/browser-pairing\/([A-Za-z0-9_-]{43})\/(approve|cancel)$/);
+  if (browserPairing && req.method === 'POST') {
+    const actor = await identityContext(req, 'identity:manage');
+    if (!actor) return sendJson(res, 403, { status: 'error', error: 'Owner authorization required' });
+    try {
+      const body = await readJsonBody(req, 4096), invitationId = browserPairing[1];
+      if (browserPairing[2] === 'approve') return sendJson(res, 201, { status: 'ok', ...(await approveBrowserPairingInvitation({ invitationId, verificationCode: body.verificationCode }, actor)) });
+      await cancelBrowserPairingInvitation(invitationId, actor); return sendJson(res, 200, { status: 'ok' });
+    } catch (err) { return error(res, err); }
+  }
   if (urlPath === '/api/auth/pairing/claim' && req.method === 'POST') { try { return sendJson(res, 202, { status: 'ok', ...(await claimPairingInvitation(await readJsonBody(req))) }); } catch (err) { return error(res, err); } }
   const pairingStatus = urlPath.match(/^\/api\/auth\/pairing\/([^/]+)\/status$/);
   if (pairingStatus && req.method === 'GET') { try { return sendJson(res, 200, { status: 'ok', ...(await getPairingInvitationStatus(decodeURIComponent(pairingStatus[1]))) }); } catch (err) { return error(res, err); } }
