@@ -243,10 +243,16 @@ export async function createChallenge(deviceId) {
   db.prepare('INSERT INTO challenges(id,device_id,challenge_hash,expires_at,consumed_at) VALUES (?,?,?,?,NULL)').run(challengeId, deviceId, hash(challenge), expiresAt);
   return { challengeId, challenge, signingPayload: `${challengeId}:${hash(challenge)}`, expiresAt };
 }
-export async function authenticateChallenge({ challengeId, signature }) {
+export async function createBrowserChallenge(deviceId) {
+  const db = await database();
+  if (!db.prepare("SELECT 1 FROM browser_pairing_invitations p JOIN devices d ON d.id=p.approved_device_id WHERE d.id=? AND d.revoked_at IS NULL AND d.role!='owner' AND p.approved_at IS NOT NULL").get(String(deviceId || ''))) throw new Error('Browser device is not approved');
+  return createChallenge(deviceId);
+}
+export async function authenticateChallenge({ challengeId, signature }, { browserOnly = false } = {}) {
   const db = await database();
   const row = db.prepare('SELECT c.*,d.public_key,d.role,d.revoked_at FROM challenges c JOIN devices d ON d.id=c.device_id WHERE c.id=?').get(challengeId);
   if (!row || row.consumed_at || row.revoked_at || Date.parse(row.expires_at) <= Date.now()) throw new Error('Challenge is invalid or expired');
+  if (browserOnly && (row.role === ROLES.OWNER || !db.prepare('SELECT 1 FROM browser_pairing_invitations WHERE approved_device_id=? AND approved_at IS NOT NULL').get(row.device_id))) throw new Error('Browser device is not approved');
   if (!crypto.verify(null, Buffer.from(`${row.id}:${row.challenge_hash}`), row.public_key, Buffer.from(String(signature || ''), 'base64url'))) throw new Error('Invalid device signature');
   const token = random(), sessionId = crypto.randomUUID(), expiresAt = future(SESSION_TTL); db.exec('BEGIN IMMEDIATE');
   try {
