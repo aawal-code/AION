@@ -17,9 +17,10 @@ export function readJsonBody(req, maxSize = 64 * 1024) {
   });
 }
 export function sendJson(res, statusCode, data) { if (!res.writableEnded) { res.writeHead(statusCode, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); } }
-const cookie = (name, value, maxAge) => `${name}=${encodeURIComponent(value)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
-const csrfCookie = (value, maxAge) => `aion_csrf=${encodeURIComponent(value)}; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
-const clearCookie = (name) => `${name}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`;
+const secureCookie = req => req.socket?.encrypted === true ? '; Secure' : '';
+const cookie = (name, value, maxAge, req) => `${name}=${encodeURIComponent(value)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie(req)}`;
+const csrfCookie = (value, maxAge, req) => `aion_csrf=${encodeURIComponent(value)}; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie(req)}`;
+const clearCookie = (name, req) => `${name}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie(req)}`;
 
 export function getCookie(req, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -43,7 +44,7 @@ async function localSession(req, res) {
   if (!isLocalhost(req) || !verifyLocalAuthSecret(req)) return sendJson(res, 401, { status: 'error', error: 'Verified native desktop authentication required' });
   try {
     const session = await issueDesktopBootstrap(); const csrf = crypto.randomBytes(32).toString('base64url');
-    res.setHeader('Set-Cookie', [cookie('aion_bootstrap', session.token, 300), csrfCookie(csrf, 300)]);
+    res.setHeader('Set-Cookie', [cookie('aion_bootstrap', session.token, 300, req), csrfCookie(csrf, 300, req)]);
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end('<!doctype html><meta charset="utf-8"><script>location.replace("/")</script>');
   } catch (err) { error(res, err); }
@@ -51,7 +52,7 @@ async function localSession(req, res) {
 async function authenticate(req, res) {
   try {
     const result = await authenticateChallenge(await readJsonBody(req)); const csrf = crypto.randomBytes(32).toString('base64url');
-    res.setHeader('Set-Cookie', [cookie('aion_session', result.token, 20 * 60), csrfCookie(csrf, 20 * 60), clearCookie('aion_bootstrap')]);
+    res.setHeader('Set-Cookie', [cookie('aion_session', result.token, 20 * 60, req), csrfCookie(csrf, 20 * 60, req), clearCookie('aion_bootstrap', req)]);
     return sendJson(res, 200, { status: 'ok', deviceId: result.deviceId, role: result.role, expiresAt: result.expiresAt });
   } catch (err) { return error(res, err); }
 }
