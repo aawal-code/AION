@@ -77,7 +77,7 @@ async function protectedAction(req, res, action) {
 export async function handleAuthRoutes(req, res, urlPath) {
   if (urlPath === '/api/auth/local-session' && req.method === 'GET') return localSession(req, res);
   if (urlPath === '/api/auth/status' && req.method === 'GET') {
-    try { const state = await getIdentityStatus(); const context = await identityContext(req, 'devices:read'); return sendJson(res, 200, { status: 'ok', ...state, authenticated: Boolean(context), role: context?.role || null, deviceId: context?.deviceId || null }); } catch (err) { return error(res, err); }
+    try { const state = await getIdentityStatus(); const context = await identityContext(req, 'devices:read'); if (typeof req.aionTrace === 'function') req.aionTrace(context ? 'session_valid' : 'session_absent_or_invalid'); return sendJson(res, 200, { status: 'ok', ...state, authenticated: Boolean(context), role: context?.role || null, deviceId: context?.deviceId || null }); } catch (err) { if (typeof req.aionTrace === 'function') req.aionTrace('session_error'); return error(res, err); }
   }
   if (urlPath === '/api/auth/challenge' && req.method === 'POST') { try { return sendJson(res, 200, { status: 'ok', ...(await createChallenge((await readJsonBody(req)).deviceId)) }); } catch (err) { return error(res, err); } }
   if (urlPath === '/api/auth/authenticate' && req.method === 'POST') return authenticate(req, res);

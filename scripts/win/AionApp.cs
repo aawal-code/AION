@@ -105,7 +105,7 @@ namespace AION.Desktop
         }
     }
 
-    public class MainWindow : Form
+    public partial class MainWindow : Form
     {
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
@@ -221,8 +221,9 @@ namespace AION.Desktop
                     int length = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
                     IntPtr extendedInfoPtr = Marshal.AllocHGlobal(length);
                     Marshal.StructureToPtr(info, extendedInfoPtr, false);
-                    SetInformationJobObject(jobObjectHandle, JobObjectExtendedLimitInformation, extendedInfoPtr, (uint)length);
+                    bool configured = SetInformationJobObject(jobObjectHandle, JobObjectExtendedLimitInformation, extendedInfoPtr, (uint)length);
                     Marshal.FreeHGlobal(extendedInfoPtr);
+                    if (!configured) { CloseHandle(jobObjectHandle); jobObjectHandle = IntPtr.Zero; }
                 }
             }
             catch { }
@@ -364,8 +365,11 @@ namespace AION.Desktop
                 webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                 webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
 
-                // Until process-bound IPC and Owner recovery are implemented,
-                // never navigate to a network origin or issue bootstrap credentials.
+                try { await InitializePrivateIpcAsync(); return; }
+                catch { StopPrivateIpc(); }
+
+                // If the owned backend cannot start, do not navigate to a network
+                // origin or issue bootstrap credentials.
                 bool initialNavigation = true;
                 webView.CoreWebView2.NavigationStarting += (s, e) => { if (!initialNavigation) e.Cancel = true; initialNavigation = false; };
                 webView.CoreWebView2.NewWindowRequested += (s, e) => e.Handled = true;
@@ -534,6 +538,7 @@ namespace AION.Desktop
 
         private void CleanupAll()
         {
+            StopPrivateIpc();
             if (watchdogTimer != null)
             {
                 watchdogTimer.Stop();

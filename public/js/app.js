@@ -690,6 +690,7 @@ function setupSseLogs() {
 
   // Connect EventSource to /api/logs
   try {
+    if (window.__aionNativeChat === true) throw new Error('Live logs are unavailable in the private desktop.');
     const sse = new EventSource('/api/logs');
     sse.onmessage = (event) => {
       try {

@@ -40,6 +40,7 @@ namespace AION.Installer
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
         private bool isSilent;
+        private bool isolatedTest;
         private string installDir;
 
         // Manifest states
@@ -87,6 +88,13 @@ namespace AION.Installer
             }
 
             this.installDir = Path.Combine(localAppData, "AION");
+            string isolatedPath = Environment.GetEnvironmentVariable("AION_ISOLATED_INSTALL_TEST");
+            if (!String.IsNullOrEmpty(isolatedPath)) {
+                string resolved = Path.GetFullPath(isolatedPath).TrimEnd(Path.DirectorySeparatorChar);
+                string temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
+                if (!String.Equals(Path.GetDirectoryName(resolved), temp, StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(resolved).StartsWith("aion-isolated-", StringComparison.Ordinal) || !File.Exists(Path.Combine(resolved, ".aion-isolated-test")) || (File.GetAttributes(resolved) & FileAttributes.ReparsePoint) != 0) throw new InvalidOperationException("Invalid isolated test directory.");
+                installDir = resolved; isolatedTest = true;
+            }
 
             ReadInstallManifest();
             InitializeUI();
@@ -457,6 +465,10 @@ namespace AION.Installer
 
             try
             {
+                if (isolatedTest) {
+                    await Task.Run(() => RemoveApplicationFiles());
+                    Application.Exit(); return;
+                }
                 // Step 1: Terminate active processes
                 SetChecklistStep(0, 0, "Stopping AION.exe and child processes...");
                 UpdateProgress(15, "Stopping active processes...");
@@ -615,13 +627,7 @@ namespace AION.Installer
                         try { if (Directory.Exists(nodeDir)) Directory.Delete(nodeDir, true); } catch { }
                     }
 
-                    // Delete standard application subdirectories
-                    string[] subDirs = new string[] { "public", "src", "dist" };
-                    foreach (string sub in subDirs)
-                    {
-                        string p = Path.Combine(installDir, sub);
-                        try { if (Directory.Exists(p)) Directory.Delete(p, true); } catch { }
-                    }
+                    RemoveApplicationFiles();
                 });
                 SetChecklistStep(5, 1, "Files cleaned.");
                 UpdateProgress(100, "Uninstallation completed.");
@@ -645,6 +651,17 @@ namespace AION.Installer
             }
         }
 
+        private void RemoveApplicationFiles()
+        {
+            foreach (string sub in new[] { "public", "src", "runtime", "node_modules", "dist" }) {
+                string dir = Path.Combine(installDir, sub);
+                if (Directory.Exists(dir)) { if ((File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0) throw new IOException("Unexpected reparse point."); Directory.Delete(dir, true); }
+            }
+            foreach (string name in new[] { "AION.exe", "server.js", "package.json", "package-lock.json", "README.md", "Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.WinForms.dll", "WebView2Loader.dll" }) {
+                string file = Path.Combine(installDir, name); if (File.Exists(file)) File.Delete(file);
+            }
+        }
+
         private void KillRunningProcesses()
         {
             string[] procNames = new string[] { "AION", "node", "rustdesk" };
@@ -658,7 +675,7 @@ namespace AION.Installer
                         try
                         {
                             string procPath = p.MainModule != null ? p.MainModule.FileName : "";
-                            if (!string.IsNullOrEmpty(procPath) && procPath.StartsWith(installDir, StringComparison.OrdinalIgnoreCase))
+                            if (!string.IsNullOrEmpty(procPath) && procPath.StartsWith(installDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                             {
                                 p.Kill();
                                 p.WaitForExit(3000);
@@ -675,8 +692,10 @@ namespace AION.Installer
         {
             try
             {
-                // Delayed recursive folder cleanup after process exit
-                string cmd = string.Format("/c timeout /t 2 /nobreak >nul & rmdir /s /q \"{0}\"", installDir);
+                // Preserve the data directory, Owner identities and WebView profile.
+                // Remove only the uninstaller itself after it exits.
+                string self = Process.GetCurrentProcess().MainModule.FileName;
+                string cmd = string.Format("/c timeout /t 2 /nobreak >nul & del /q \"{0}\"", self);
                 ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", cmd)
                 {
                     CreateNoWindow = true,

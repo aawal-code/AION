@@ -52,6 +52,7 @@ namespace AION.Installer
         private const string TAILSCALE_URL = "https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi";
 
         private bool isSilent;
+        private bool isolatedTest;
         private string installDir;
 
         // Screen panels
@@ -80,9 +81,6 @@ namespace AION.Installer
         // Screen 4: Completion Summary
         private Label lblSummaryDevice;
         private Label lblSummaryTailscale;
-        private Label lblSummaryPin;
-        private Label lblSummaryUrl;
-        private PictureBox picSummaryQr;
 
         public SetupWizardForm(bool silent)
         {
@@ -108,6 +106,13 @@ namespace AION.Installer
             }
 
             this.installDir = Path.Combine(localAppData, "AION");
+            string isolatedPath = Environment.GetEnvironmentVariable("AION_ISOLATED_INSTALL_TEST");
+            if (!String.IsNullOrEmpty(isolatedPath)) {
+                string resolved = Path.GetFullPath(isolatedPath).TrimEnd(Path.DirectorySeparatorChar);
+                string temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
+                if (!String.Equals(Path.GetDirectoryName(resolved), temp, StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(resolved).StartsWith("aion-isolated-", StringComparison.Ordinal) || Directory.Exists(resolved) || File.Exists(resolved)) throw new InvalidOperationException("Invalid isolated test directory.");
+                installDir = resolved; isolatedTest = true;
+            }
 
             InitializeWizardUI();
 
@@ -276,7 +281,7 @@ namespace AION.Installer
             pnlScreen2.Controls.Add(lblTitle);
 
             Label lblSub = new Label();
-            lblSub.Text = "Step 2 of 2: Mesh Network & Screen View";
+            lblSub.Text = "Step 2 of 2: Installation options";
             lblSub.Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
             lblSub.ForeColor = Color.FromArgb(161, 161, 170);
             lblSub.Location = new Point(34, 58);
@@ -291,7 +296,7 @@ namespace AION.Installer
             pnlScreen2.Controls.Add(card);
 
             Label lblTsTitle = new Label();
-            lblTsTitle.Text = "Tailscale Auth Key (Optional)";
+            lblTsTitle.Text = "Remote access and screen control are unavailable";
             lblTsTitle.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
             lblTsTitle.ForeColor = Color.FromArgb(228, 228, 231);
             lblTsTitle.Location = new Point(18, 14);
@@ -305,10 +310,11 @@ namespace AION.Installer
             txtTailscaleAuthKey.BackColor = Color.FromArgb(28, 36, 52);
             txtTailscaleAuthKey.ForeColor = Color.White;
             txtTailscaleAuthKey.BorderStyle = BorderStyle.FixedSingle;
+            txtTailscaleAuthKey.Enabled = false;
             card.Controls.Add(txtTailscaleAuthKey);
 
             Label lblTsHelp = new Label();
-            lblTsHelp.Text = "Leave blank for standard browser login, or paste tskey-auth-... to join automatically.";
+            lblTsHelp.Text = "Setup will not configure remote access or sign in to Tailscale.";
             lblTsHelp.Font = new Font("Segoe UI", 8f);
             lblTsHelp.ForeColor = Color.FromArgb(140, 145, 160);
             lblTsHelp.Location = new Point(20, 66);
@@ -316,12 +322,13 @@ namespace AION.Installer
             card.Controls.Add(lblTsHelp);
 
             chkRustDesk = new CheckBox();
-            chkRustDesk.Text = "Enable Portable RustDesk Screen View (Remote Display Deck)";
+            chkRustDesk.Text = "Remote screen control unavailable";
             chkRustDesk.Font = new Font("Segoe UI", 9f);
             chkRustDesk.ForeColor = Color.FromArgb(212, 212, 216);
             chkRustDesk.Location = new Point(20, 96);
             chkRustDesk.Size = new Size(440, 24);
-            chkRustDesk.Checked = true;
+            chkRustDesk.Checked = false;
+            chkRustDesk.Enabled = false;
             card.Controls.Add(chkRustDesk);
 
             chkStartup = new CheckBox();
@@ -409,11 +416,11 @@ namespace AION.Installer
             string[] stepTitles = new string[]
             {
                 "Node.js v20 LTS runtime",
-                "Tailscale mesh network & hostname",
+                "Remote access (unavailable)",
                 "Portable RustDesk Screen View",
                 "Extracting AION Core & WebView2 host",
-                "Firewall TCP 5050 & Installed Apps registry",
-                "Starting AION Core & desktop supervisor"
+                "Shortcuts and installed applications registry",
+                "Finalizing installation"
             };
 
             stepLabels = new Label[stepTitles.Length];
@@ -467,7 +474,7 @@ namespace AION.Installer
             pnlScreen4.Controls.Add(lblTitle);
 
             Label lblSub = new Label();
-            lblSub.Text = "Your workstation is now live on the mesh";
+            lblSub.Text = "Installation files are in place";
             lblSub.Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
             lblSub.ForeColor = Color.FromArgb(161, 161, 170);
             lblSub.Location = new Point(34, 58);
@@ -490,64 +497,12 @@ namespace AION.Installer
             card.Controls.Add(lblSummaryDevice);
 
             lblSummaryTailscale = new Label();
-            lblSummaryTailscale.Text = "Mesh IP: Connecting...";
+            lblSummaryTailscale.Text = "Remote access and mobile pairing are unavailable.";
             lblSummaryTailscale.Font = new Font("Segoe UI", 9f);
             lblSummaryTailscale.ForeColor = Color.FromArgb(212, 212, 216);
             lblSummaryTailscale.Location = new Point(20, 44);
-            lblSummaryTailscale.Size = new Size(310, 20);
+            lblSummaryTailscale.Size = new Size(440, 40);
             card.Controls.Add(lblSummaryTailscale);
-
-            Label lblPinHeader = new Label();
-            lblPinHeader.Text = "MOBILE PAIRING PIN";
-            lblPinHeader.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
-            lblPinHeader.ForeColor = Color.FromArgb(161, 161, 170);
-            lblPinHeader.Location = new Point(20, 78);
-            lblPinHeader.AutoSize = true;
-            card.Controls.Add(lblPinHeader);
-
-            lblSummaryPin = new Label();
-            lblSummaryPin.Text = "----";
-            lblSummaryPin.Font = new Font("Segoe UI", 24f, FontStyle.Bold);
-            lblSummaryPin.ForeColor = Color.FromArgb(56, 189, 248); // Cyan
-            lblSummaryPin.Location = new Point(18, 98);
-            lblSummaryPin.Size = new Size(200, 46);
-            card.Controls.Add(lblSummaryPin);
-
-            lblSummaryUrl = new Label();
-            lblSummaryUrl.Text = "Phone Pairing URL: http://localhost:5050/setup";
-            lblSummaryUrl.Font = new Font("Segoe UI", 8.5f);
-            lblSummaryUrl.ForeColor = Color.FromArgb(161, 161, 170);
-            lblSummaryUrl.Location = new Point(20, 154);
-            lblSummaryUrl.Size = new Size(310, 20);
-            card.Controls.Add(lblSummaryUrl);
-
-            Label lblNote = new Label();
-            lblNote.Text = "Open AION on your phone, tap Pair, and enter this PIN to connect permanently.";
-            lblNote.Font = new Font("Segoe UI", 8.5f);
-            lblNote.ForeColor = Color.FromArgb(140, 145, 160);
-            lblNote.Location = new Point(20, 186);
-            lblNote.Size = new Size(440, 36);
-            card.Controls.Add(lblNote);
-
-            picSummaryQr = new PictureBox();
-            picSummaryQr.Location = new Point(328, 14);
-            picSummaryQr.Size = new Size(136, 136);
-            picSummaryQr.BackColor = Color.White;
-            picSummaryQr.SizeMode = PictureBoxSizeMode.Zoom;
-            card.Controls.Add(picSummaryQr);
-
-            Label lblQrCaption = new Label();
-            lblQrCaption.Text = "Scan to Pair";
-            lblQrCaption.Font = new Font("Segoe UI", 8f, FontStyle.Regular);
-            lblQrCaption.ForeColor = Color.FromArgb(161, 161, 170);
-            lblQrCaption.Location = new Point(328, 154);
-            lblQrCaption.Size = new Size(136, 18);
-            lblQrCaption.TextAlign = ContentAlignment.MiddleCenter;
-            card.Controls.Add(lblQrCaption);
-
-            // Pairing QR generation intentionally remains disabled: sending a
-            // pairing URL to a third-party image service leaks local topology.
-            picSummaryQr.Image = null;
 
             Button btnLaunch = new Button();
             btnLaunch.Text = "Launch AION";
@@ -625,11 +580,11 @@ namespace AION.Installer
                 ? txtDeviceName.Text.Trim()
                 : Environment.MachineName;
             string deviceRole = (rbLaptop != null && rbLaptop.Checked) ? "laptop" : "desktop";
-            string tsAuthKey = (txtTailscaleAuthKey != null) ? txtTailscaleAuthKey.Text.Trim() : "";
 
             try
             {
                 Directory.CreateDirectory(installDir);
+                if (isolatedTest) File.WriteAllText(Path.Combine(installDir, ".aion-isolated-test"), "AION isolated installation test");
                 Directory.CreateDirectory(Path.Combine(installDir, "data"));
 
                 // Save Device Identity
@@ -640,53 +595,33 @@ namespace AION.Installer
                     deviceRole,
                     DateTime.UtcNow.ToString("o")
                 );
-                File.WriteAllText(identityPath, identityJson, Encoding.UTF8);
+                if (!File.Exists(identityPath)) File.WriteAllText(identityPath, identityJson, Encoding.UTF8);
 
-                // Step 1: Node.js v20 LTS
-                SetChecklistStep(0, 0, "Checking Node.js v20+ runtime environment...");
-                UpdateProgress(15, "Step 1 of 6: Node.js Runtime", "Resolving Node.js runtime...");
-                string nodeExe = await Task.Run(() => ResolveNodeRuntime(installDir, ref installedNode));
-                SetChecklistStep(0, 1, "Node.js v20 LTS runtime verified.");
+                SetChecklistStep(0, 0, "Preparing bundled runtime...");
+                UpdateProgress(15, "Step 1 of 6: Runtime", "Preparing bundled runtime...");
+                string nodeExe = Path.Combine(installDir, "runtime", "node.exe");
 
-                // Step 2: Tailscale Mesh
-                SetChecklistStep(1, 0, "Configuring Tailscale mesh network...");
-                UpdateProgress(30, "Step 2 of 6: Mesh Network", "Configuring Tailscale...");
-                await Task.Run(() => EnsureTailscale(tsAuthKey, deviceName, ref installedTailscale));
-                SetChecklistStep(1, 1, "Tailscale mesh network configured.");
-
-                // Step 3: Portable RustDesk
-                SetChecklistStep(2, 0, "Configuring Remote Screen View...");
-                UpdateProgress(48, "Step 3 of 6: Screen View Deck", "Setting up RustDesk...");
-                await Task.Run(() => ConfigureScreenView(installDir, enableRustDesk));
-                SetChecklistStep(2, enableRustDesk ? 1 : 2, enableRustDesk ? "Portable RustDesk Screen View configured." : "RustDesk Screen View skipped.");
+                UpdateProgress(30, "Step 2 of 6: Remote access", "Remote access is unavailable.");
+                SetChecklistStep(1, 2, "Remote access unavailable.");
+                UpdateProgress(48, "Step 3 of 6: Screen control", "Screen control is unavailable.");
+                SetChecklistStep(2, 2, "Remote screen control unavailable.");
 
                 // Step 4: Extract Application Payload + Native Host
                 SetChecklistStep(3, 0, "Extracting AION application files...");
                 UpdateProgress(65, "Step 4 of 6: AION Application Core", "Deploying application payload...");
                 await Task.Run(() => DeployApplicationFiles(installDir));
+                await Task.Run(() => VerifyBundledRuntime(installDir));
+                SetChecklistStep(0, 1, "Bundled runtime and dependencies verified.");
                 SetChecklistStep(3, 1, "AION application files deployed successfully.");
 
-                // Step 5: System Integrations (Firewall, Startup, Shortcuts, Registry)
-                SetChecklistStep(4, 0, "Configuring firewall and desktop shortcuts...");
-                UpdateProgress(82, "Step 5 of 6: System Integrations", "Configuring Windows firewall and shortcuts...");
-                await Task.Run(() => ConfigureSystemIntegrations(installDir, nodeExe, installedNode, installedTailscale, enableRustDesk, enableStartup, enableShortcuts));
-                SetChecklistStep(4, 1, "Firewall rules and desktop shortcuts configured.");
+                // Step 5: System integrations selected by the user.
+                SetChecklistStep(4, 0, "Configuring selected Windows integrations...");
+                UpdateProgress(82, "Step 5 of 6: System Integrations", "Configuring selected Windows integrations...");
+                if (!isolatedTest) await Task.Run(() => ConfigureSystemIntegrations(installDir, nodeExe, installedNode, installedTailscale, enableRustDesk, enableStartup, enableShortcuts));
+                SetChecklistStep(4, 1, "Selected Windows integrations configured.");
 
-                // Enforce PC Tailscale Auth before Screen 4 loads
-                await EnforceTailscaleAuthAsync();
-
-                // Step 6: Start AION & Retrieve Pairing PIN
-                SetChecklistStep(5, 0, "Starting AION Core and generating Pairing PIN...");
-                UpdateProgress(95, "Step 6 of 6: Starting AION", "Initializing supervisor...");
-                string pairingPin = await Task.Run(() => EnsurePairingPin(installDir));
-                string tailscaleIp = await Task.Run(() => GetTailscaleIp());
-                if (string.IsNullOrEmpty(tailscaleIp))
-                {
-                    tailscaleIp = await Task.Run(() => GetTailscaleOrLocalIp());
-                }
-                string localWifiIp = await Task.Run(() => GetLocalWifiIp());
-                SetChecklistStep(5, 1, "AION Core is active.");
-                UpdateProgress(100, "Installation Complete", "Workstation is ready.");
+                SetChecklistStep(5, 1, "Installation files prepared.");
+                UpdateProgress(100, "Installation Complete", "Installation files are in place.");
 
                 // Update Screen 4
                 if (lblSummaryDevice != null)
@@ -697,19 +632,6 @@ namespace AION.Installer
                 {
                     lblSummaryTailscale.Text = "Remote access is disabled until secure transport is configured.";
                 }
-                if (lblSummaryPin != null)
-                {
-                    lblSummaryPin.Text = pairingPin;
-                }
-                if (lblSummaryUrl != null)
-                {
-                    lblSummaryUrl.Text = "Pairing QR is unavailable while remote access is disabled.";
-                }
-                if (picSummaryQr != null)
-                {
-                    picSummaryQr.Image = null;
-                }
-
                 await Task.Delay(800);
 
                 if (!isSilent)
@@ -718,12 +640,13 @@ namespace AION.Installer
                 }
                 else
                 {
-                    LaunchAionApp();
+                    if (!isolatedTest) LaunchAionApp();
                     Application.Exit();
                 }
             }
             catch (Exception ex)
             {
+                if (isolatedTest && isSilent) { Environment.ExitCode = 1; Application.Exit(); return; }
                 string errorDetail = string.Format(
                     "Error: {0}\r\n\r\nType: {1}\r\n\r\nLocation:\r\n{2}",
                     ex.Message,
@@ -896,36 +819,6 @@ namespace AION.Installer
                 DateTime.UtcNow.ToString("o")
             );
             File.WriteAllText(screenViewJson, json, Encoding.UTF8);
-        }
-
-        private string EnsurePairingPin(string targetDir)
-        {
-            string trustedFile = Path.Combine(targetDir, "data", "trusted-devices.json");
-            string pin = null;
-
-            if (File.Exists(trustedFile))
-            {
-                try
-                {
-                    string content = File.ReadAllText(trustedFile, Encoding.UTF8);
-                    System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(content, "\"pin\"\\s*:\\s*\"(\\d{4})\"");
-                    if (m.Success)
-                    {
-                        pin = m.Groups[1].Value;
-                    }
-                }
-                catch { }
-            }
-
-            if (string.IsNullOrEmpty(pin))
-            {
-                Random rnd = new Random();
-                pin = rnd.Next(1000, 9999).ToString();
-                string newJson = string.Format("{{\r\n  \"pin\": \"{0}\",\r\n  \"devices\": []\r\n}}", pin);
-                try { File.WriteAllText(trustedFile, newJson, Encoding.UTF8); } catch { }
-            }
-
-            return pin;
         }
 
         private static string GetTailscaleExe()
@@ -1179,11 +1072,6 @@ namespace AION.Installer
 
         private void DeployApplicationFiles(string targetDir)
         {
-            foreach (var p in System.Diagnostics.Process.GetProcessesByName("AION"))
-            {
-                try { p.Kill(); p.WaitForExit(2000); } catch { }
-            }
-
             ExtractResourceToFile("AION.Payload.zip", null, delegate(Stream zipStream)
             {
                 using (ZipArchive archive = new ZipArchive(zipStream, ZipArchiveMode.Read))
@@ -1228,48 +1116,23 @@ namespace AION.Installer
             ExtractResourceToFile("AION.Microsoft.Web.WebView2.WinForms.dll", Path.Combine(targetDir, "Microsoft.Web.WebView2.WinForms.dll"), null);
             ExtractResourceToFile("AION.WebView2Loader.dll", Path.Combine(targetDir, "WebView2Loader.dll"), null);
 
-            try
-            {
-                var npmInfo = new ProcessStartInfo {
-                    FileName = "cmd.exe",
-                    Arguments = "/c npm install",
-                    WorkingDirectory = targetDir,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden
-                };
-                System.Diagnostics.Process.Start(npmInfo).WaitForExit();
-            }
-            catch { }
+        }
 
-            try
-            {
-                var nodeInfo = new ProcessStartInfo {
-                    FileName = "node",
-                    Arguments = "server.js",
-                    WorkingDirectory = targetDir,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    UseShellExecute = false
-                };
-                try
-                {
-                    System.Diagnostics.Process.Start(nodeInfo);
-                }
-                catch
-                {
-                    string fallbackNode = WhereExe("node.exe");
-                    if (string.IsNullOrEmpty(fallbackNode))
-                    {
-                        fallbackNode = Path.Combine(targetDir, "node", "node.exe");
-                    }
-                    if (!string.IsNullOrEmpty(fallbackNode) && File.Exists(fallbackNode))
-                    {
-                        nodeInfo.FileName = fallbackNode;
-                        System.Diagnostics.Process.Start(nodeInfo);
-                    }
-                }
+        private void VerifyBundledRuntime(string targetDir)
+        {
+            string node = Path.Combine(targetDir, "runtime", "node.exe");
+            if (!File.Exists(node)) throw new InvalidOperationException("Bundled Node runtime is missing.");
+            string actual;
+            using (var hash = System.Security.Cryptography.SHA256.Create())
+            using (var input = File.OpenRead(node)) actual = BitConverter.ToString(hash.ComputeHash(input)).Replace("-", "").ToLowerInvariant();
+            if (actual != "9a4eb5f1c29c6a2e93852ead46b999e284a6a5ca8bab4d4e241d587d025a52de") throw new InvalidOperationException("Bundled Node runtime integrity check failed.");
+            var psi = new ProcessStartInfo(node, "--input-type=module -e \"await import('node:sqlite'); await import('reflect-metadata'); await import('@peculiar/x509')\"") {
+                WorkingDirectory = targetDir, UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
+            };
+            using (var process = Process.Start(psi)) {
+                if (process == null || !process.WaitForExit(15000)) { if (process != null) process.Kill(); throw new InvalidOperationException("Runtime dependency verification timed out."); }
+                if (process.ExitCode != 0) throw new InvalidOperationException("Required runtime dependencies are unavailable.");
             }
-            catch { }
         }
 
         private void ConfigureSystemIntegrations(string targetDir, string nodeExe, bool installedNode, bool installedTailscale, bool installedRustDesk, bool enableStartup, bool enableShortcuts)
@@ -1301,23 +1164,6 @@ namespace AION.Installer
 
             string manifestPath = Path.Combine(targetDir, "install-manifest.json");
             File.WriteAllText(manifestPath, manifestJson, Encoding.UTF8);
-
-            RunCommand("schtasks.exe", "/end /tn AionDaemon");
-            RunCommand("schtasks.exe", "/delete /tn AionDaemon /f");
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "netsh",
-                    Arguments = "advfirewall firewall add rule name=\"AION Core\" dir=in action=allow protocol=TCP localport=5050 profile=any",
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    CreateNoWindow = true
-                }).WaitForExit();
-            }
-            catch
-            {
-                RunCommand("netsh.exe", "advfirewall firewall add rule name=\"AION Core\" dir=in action=allow protocol=TCP localport=5050");
-            }
 
             string aionExe = Path.Combine(targetDir, "AION.exe");
             string iconPath = Path.Combine(targetDir, "public", "brand", "aion.ico");

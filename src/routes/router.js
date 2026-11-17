@@ -639,9 +639,9 @@ export function getMobileGatewayHtml(req) {
 /**
  * Central HTTP request dispatcher matching routes cleanly
  */
-export async function handleRequest(req, res) {
+export async function handleRequest(req, res, nativeOrigin = null) {
   const origin = req.headers?.origin;
-  const expectedOrigin = `http://${req.headers.host || 'localhost:5050'}`;
+  const expectedOrigin = nativeOrigin || `http://${req.headers.host || 'localhost:5050'}`;
   if (origin) {
     if (origin !== expectedOrigin) {
       res.writeHead(403, { 'Content-Type': 'application/json' });

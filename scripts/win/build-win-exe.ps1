@@ -75,6 +75,12 @@ Write-Host "[OK] Using application icon for win32icon: $IconPath" -ForegroundCol
 Write-Host "[INFO] Compiling dist\AION.exe..." -ForegroundColor Yellow
 $AionAppSource = Join-Path $ProjectRoot "scripts\win\AionApp.cs"
 $AionAppOut = Join-Path $DistDir "AION.exe"
+$NativeIpcClientSource = Join-Path $ProjectRoot "scripts\win\NativeIpcClient.cs"
+$NativeIpcStreamSource = Join-Path $ProjectRoot "scripts\win\NativeIpcResponseStream.cs"
+$PrivateIpcSource = Join-Path $ProjectRoot "scripts\win\MainWindow.PrivateIpc.cs"
+$NativeChatSource = Join-Path $ProjectRoot "scripts\win\MainWindow.NativeChat.cs"
+$PrivateAssets = Join-Path $DistDir "private-assets.zip"
+Compress-Archive -Path (Join-Path $ProjectRoot 'public\*') -DestinationPath $PrivateAssets -Force
 
 $AionAppArgs = @(
     "/target:winexe",
@@ -85,9 +91,17 @@ $AionAppArgs = @(
     "/r:System.Core.dll",
     "/r:System.Drawing.dll",
     "/r:System.Windows.Forms.dll",
+    "/r:System.Web.Extensions.dll",
+    "/r:System.IO.Compression.dll",
+    "/r:System.IO.Compression.FileSystem.dll",
     "/r:$CoreDll",
     "/r:$WinFormsDll",
-    $AionAppSource
+    "/resource:$PrivateAssets,AION.PrivateAssets",
+    $AionAppSource,
+    $NativeIpcClientSource,
+    $NativeIpcStreamSource,
+    $PrivateIpcSource,
+    $NativeChatSource
 )
 
 & $Csc $AionAppArgs
@@ -134,6 +148,33 @@ Write-Host "[INFO] Assembling application payload into $PayloadZip..." -Foregrou
 Add-Type -AssemblyName "System.IO.Compression"
 Add-Type -AssemblyName "System.IO.Compression.FileSystem"
 $zip = [System.IO.Compression.ZipFile]::Open($PayloadZip, [System.IO.Compression.ZipArchiveMode]::Create)
+
+# Node's published SHA-256 for v24.18.0 win-x64/node.exe. Never use a
+# system runtime or install an unverified executable on the target machine.
+$NodeSha256 = '9a4eb5f1c29c6a2e93852ead46b999e284a6a5ca8bab4d4e241d587d025a52de'
+$NodeExe = Join-Path $BuildCache 'node-v24.18.0-win-x64.exe'
+if (-not (Test-Path $NodeExe) -or (Get-FileHash -Algorithm SHA256 -LiteralPath $NodeExe).Hash.ToLowerInvariant() -ne $NodeSha256) {
+    & curl.exe --fail --silent --show-error --location --max-time 180 --output $NodeExe 'https://nodejs.org/dist/v24.18.0/win-x64/node.exe'
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to download the pinned Node runtime' }
+}
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $NodeExe).Hash.ToLowerInvariant() -ne $NodeSha256) { throw 'Bundled Node runtime integrity check failed' }
+[System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $NodeExe, 'runtime/node.exe') | Out-Null
+
+# npm ci enforces package-lock integrity while staging production dependencies.
+$dependencyStage = Join-Path ([IO.Path]::GetTempPath()) ('aion-deps-' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $dependencyStage | Out-Null
+Copy-Item -LiteralPath (Join-Path $ProjectRoot 'package.json'), (Join-Path $ProjectRoot 'package-lock.json') -Destination $dependencyStage
+Push-Location $dependencyStage
+try {
+    $npm = Get-Command npm.cmd,npm.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $npm) { throw 'npm is required to verify the dependency lockfile' }
+    & $npm.Source ci --omit=dev --ignore-scripts --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to verify and stage production dependencies' }
+    Get-ChildItem -LiteralPath (Join-Path $dependencyStage 'node_modules') -Recurse -File | ForEach-Object {
+        $relative = $_.FullName.Substring($dependencyStage.Length).TrimStart('\', '/').Replace('\', '/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $relative) | Out-Null
+    }
+} finally { Pop-Location }
 
 $FoldersToInclude = @("public", "src")
 foreach ($folder in $FoldersToInclude) {

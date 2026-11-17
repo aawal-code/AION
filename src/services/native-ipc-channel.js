@@ -58,7 +58,7 @@ export function serveNativeIpc(input, output, dispatch, { timeoutMs = 30000 } = 
         try {
           let result, error = false;
           if (!entry.abort.signal.aborted) {
-            try { result = await dispatch(entry.method, entry.payload, entry.abort.signal); }
+            try { result = await dispatch(entry.method, entry.payload, entry.abort.signal, entry.id); }
             catch { error = true; }
           }
           if (stopped) break;

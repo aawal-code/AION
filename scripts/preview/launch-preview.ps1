@@ -16,6 +16,9 @@ try {
         Copy-Item -LiteralPath $source -Destination $appRoot -Recurse
     }
     foreach ($file in @('server.js', 'package.json')) { Copy-Item -LiteralPath (Join-Path $sourceRoot $file) -Destination $appRoot }
+    $nodeExe = (Get-Command node.exe -ErrorAction Stop).Source
+    New-Item -ItemType Directory -Path (Join-Path $appRoot 'runtime') | Out-Null
+    Copy-Item -LiteralPath $nodeExe -Destination (Join-Path $appRoot 'runtime\node.exe')
     foreach ($file in @('AION.exe', 'Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll', 'WebView2Loader.dll')) { Copy-Item -LiteralPath (Join-Path $buildRoot $file) -Destination $appRoot }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'run-prepared.ps1') -Destination $previewRoot
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Launch-Prepared.vbs') -Destination $previewRoot

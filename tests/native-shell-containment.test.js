@@ -13,6 +13,10 @@ const exe = process.env.AION_TEST_NATIVE_EXE;
 test('Master spec §1/§2: production shell fails closed with an occupied loopback port', { skip: process.platform !== 'win32' || !exe, timeout: 20000 }, async t => {
   assert.ok(fs.existsSync(exe), 'isolated native executable required');
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'aion-shell-containment-'));
+  // A shell without its owned backend must display the fail-closed page.
+  const isolatedExe = path.join(temp, 'AION.exe');
+  fs.copyFileSync(exe, isolatedExe);
+  for (const name of ['Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll', 'WebView2Loader.dll']) fs.copyFileSync(path.join(path.dirname(exe), name), path.join(temp, name));
   const profile = path.join(temp, 'profile'); fs.mkdirSync(profile);
   const sentinel = path.join(profile, 'legacy-profile-sentinel'); fs.writeFileSync(sentinel, 'preserve legacy profile');
   let connections = 0, bytes = 0; const requestLines = [];
@@ -26,7 +30,7 @@ test('Master spec §1/§2: production shell fails closed with an occupied loopba
   }
   const env = { ...process.env, AION_INSTANCE_ID: `containment-${crypto.randomUUID()}`, AION_PORT: String(attacker6.address().port), AION_WEBVIEW2_DATA_PATH: profile, AION_LOCAL_AUTH_SECRET: 'synthetic-test-value-not-a-credential' };
   if (debugPort) env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = `--remote-debugging-port=${debugPort}`;
-  const launch = () => spawn(exe, [], { cwd: path.dirname(exe), windowsHide: true, stdio: 'ignore', env });
+  const launch = () => spawn(isolatedExe, [], { cwd: temp, windowsHide: true, stdio: 'ignore', env });
   let child = launch();
   t.after(async () => { if (child.exitCode === null) child.kill(); await Promise.all([new Promise(resolve => attacker4.close(resolve)), new Promise(resolve => attacker6.close(resolve))]); try { fs.rmSync(temp, { recursive: true, force: true }); } catch {} });
   await new Promise(resolve => setTimeout(resolve, 3500));

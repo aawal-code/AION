@@ -8,6 +8,7 @@ import { getSvgIcon } from './icons.js';
 import { showToast } from './app.js';
 import { renderMarkdown } from './markdown.js';
 import { initTaskPanel, refreshTaskPanel } from './tasks.js';
+import { nativeChatAvailable, nativeChatFetch } from './native-chat-stream.js';
 
 // All mutating requests use the same-origin session's CSRF token.
 function assistantFetch(url, options = {}) {
@@ -658,7 +659,8 @@ export async function sendAssistantPrompt(prompt) {
   bubble.append(content, cancel); responseEl.append(bubble); container?.appendChild(responseEl);
   const controller = new AbortController(); activeChatController = controller; cancel.addEventListener('click', () => controller.abort()); let text = '', done = false;
   try {
-    const res = await assistantFetch('/api/assistant/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ prompt: cleanPrompt, mode: activeMode, projectId: activeProjectId, sessionId: activeSessionId, runtimeMode: currentTarget.runtimeMode, provider: currentTarget.apiProvider, model: currentTarget.apiModel }) });
+    const body = JSON.stringify({ prompt: cleanPrompt, mode: activeMode, projectId: activeProjectId, sessionId: activeSessionId, runtimeMode: currentTarget.runtimeMode, provider: currentTarget.apiProvider, model: currentTarget.apiModel });
+    const res = nativeChatAvailable() ? await nativeChatFetch(body, controller.signal) : await assistantFetch('/api/assistant/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body });
     if (!res.ok) { const data = await res.json(); throw new Error(data.error || 'Unable to start chat'); }
     const reader = res.body.getReader(), decoder = new TextDecoder(); let pending = '';
     const handle = (event) => { if (controller.signal.aborted) throw new Error('Response cancelled'); const lines = event.split(/\r?\n/); const type = lines.find((line) => line.startsWith('event:'))?.slice(6).trim(); const raw = lines.filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n'); if (!raw) return; const data = JSON.parse(raw);

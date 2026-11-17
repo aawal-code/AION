@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,6 +9,15 @@ using System.Web.Script.Serialization;
 
 namespace AION.Desktop
 {
+    internal static class NativeIpcTrace
+    {
+        private static int count;
+        internal static void Write(string id, string stage)
+        {
+            if (Environment.GetEnvironmentVariable("AION_PRIVATE_IPC_DEV") == "1" && id != null && Interlocked.Increment(ref count) <= 2000)
+                try { Console.Error.WriteLine("AION_TRACE shell " + Stopwatch.GetTimestamp() + " " + id + " " + stage); } catch { }
+        }
+    }
     // Framing only. The caller owns the launched child and enforces all
     // authentication, authorization, origin and process lifetime policies.
     internal sealed class NativeIpcClient : IDisposable
@@ -51,24 +61,29 @@ namespace AION.Desktop
             return value;
         }
 
-        public async Task<Dictionary<string, object>> CallAsync(string method, object payload, int timeoutMs, CancellationToken cancellation)
+        public async Task<Dictionary<string, object>> CallAsync(string method, object payload, int timeoutMs, CancellationToken cancellation, string requestId = null, string traceId = null)
         {
             if (timeoutMs < 1 || timeoutMs > 300000) throw new ArgumentOutOfRangeException("timeoutMs");
-            await callGate.WaitAsync(cancellation);
+            Stopwatch elapsed = Stopwatch.StartNew();
+            string trace = traceId ?? requestId;
+            NativeIpcTrace.Write(trace, "gate_wait_" + method.Replace('.', '_'));
+            if (!await callGate.WaitAsync(timeoutMs, cancellation)) throw new TimeoutException("IPC queue deadline exceeded");
+            NativeIpcTrace.Write(trace, "gate_acquired_" + method.Replace('.', '_'));
             try
             {
                 if (closed) throw new IOException("IPC closed");
                 cancellation.ThrowIfCancellationRequested();
-                string id = Guid.NewGuid().ToString("N");
+                string id = requestId ?? Guid.NewGuid().ToString("N");
                 using (var deadline = new CancellationTokenSource())
                 {
                     Task<Dictionary<string, object>> operation = CallCore(id, method, payload, cancellation);
-                    if (await Task.WhenAny(operation, Task.Delay(timeoutMs, deadline.Token)) != operation) { Dispose(); throw new TimeoutException("IPC deadline exceeded"); }
+                    int remaining = Math.Max(0, timeoutMs - (int)Math.Min(timeoutMs, elapsed.ElapsedMilliseconds));
+                    if (await Task.WhenAny(operation, Task.Delay(remaining, deadline.Token)) != operation) { Dispose(); throw new TimeoutException("IPC deadline exceeded"); }
                     deadline.Cancel();
                     try { return await operation; } catch { Dispose(); throw; }
                 }
             }
-            finally { callGate.Release(); }
+            finally { callGate.Release(); NativeIpcTrace.Write(trace, "gate_released_" + method.Replace('.', '_')); }
         }
 
         private async Task<Dictionary<string, object>> CallCore(string id, string method, object payload, CancellationToken cancellation)
