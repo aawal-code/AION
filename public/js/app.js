@@ -41,6 +41,7 @@ import { initSettings, openSettings } from './settings.js';
 import { initScreenControl } from './screen-control.js';
 import { initAssistantWorkspace, sendAssistantPrompt } from './assistant.js';
 import { initHome } from './home.js';
+import { loadSecurityPanel } from './security.js';
 
 // ==========================================================================
 // Service Worker Live Controller Reload (Mobile / Desktop PWA Auto-Refresh)
@@ -79,39 +80,6 @@ if (typeof window !== 'undefined') {
 // ==========================================================================
 // Settings Modal (macOS Preferences Dialog)
 // ==========================================================================
-function setupSettingsModal() {
-  const modal = document.getElementById('settingsModal');
-  const btnOpen = document.getElementById('btnOpenSettings');
-  const btnMobile = document.getElementById('btnMobileSettings');
-  const btnClose = document.getElementById('btnCloseSettings');
-
-  function openSettings() {
-    modal?.classList.add('active');
-    checkAuthStatus();
-    fetchTrustedDevices();
-  }
-
-  function closeSettings() {
-    modal?.classList.remove('active');
-  }
-
-  btnOpen?.addEventListener('click', openSettings);
-  btnMobile?.addEventListener('click', openSettings);
-  btnClose?.addEventListener('click', closeSettings);
-
-  modal?.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      closeSettings();
-    }
-  });
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modal?.classList.contains('active')) {
-      closeSettings();
-    }
-  });
-}
-
 // ==========================================================================
 // Navigation & Tab Switching
 // ==========================================================================
@@ -1037,20 +1005,21 @@ export async function setupMobileCompanionChannel() {
 // ==========================================================================
 
 async function checkAuthStatus() {
+  const label = document.getElementById('hostStatusText');
+  const indicator = document.getElementById('hostStatusButton');
   try {
-    const token = localStorage.getItem('aion_token');
-    const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    const res = await fetch('/api/auth/status', { headers });
+    const res = await fetch('/api/auth/status', { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error('Host status unavailable');
     const data = await res.json();
-
-    const pairingModal = document.getElementById('pairingModal');
-    if (pairingModal) pairingModal.style.display = 'none';
-    if (!data.authenticated) openSettings('security');
-
+    if (data.status !== 'ok' || typeof data.authenticated !== 'boolean') throw new Error('Invalid host status');
+    const key = data.authenticated ? 'hostStatusSignedIn' : data.initialized ? 'hostStatusSignIn' : 'hostStatusSetup';
+    if (label) { label.dataset.i18n = key; label.textContent = t(key); }
+    if (indicator) indicator.dataset.state = data.authenticated ? 'authenticated' : 'unauthenticated';
+    return data;
   } catch (err) {
-    console.warn('Auth status check error:', err);
+    if (label) { label.dataset.i18n = 'hostStatusUnknown'; label.textContent = t('hostStatusUnknown'); }
+    if (indicator) indicator.dataset.state = 'unavailable';
+    return null;
   }
 }
 
@@ -1491,7 +1460,7 @@ if (typeof document !== 'undefined') {
     initState();
 
     // Check Auth & Setup Pairing
-    checkAuthStatus();
+    checkAuthStatus().then((status) => { if (status?.initialized && !status.authenticated) loadSecurityPanel(); });
     setupPairingSettingsControls();
     setupMobileOnboardingCard();
 
@@ -1499,7 +1468,9 @@ if (typeof document !== 'undefined') {
     initNav();
     initSettings();
     setupNavigation();
-    setupSettingsModal();
+    document.getElementById('hostStatusButton')?.addEventListener('click', () => openSettings('security'));
+    window.addEventListener('aion:authenticated', checkAuthStatus);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkAuthStatus(); });
 
     // 3. Workstation Quick Actions
     setupWorkstationActions();

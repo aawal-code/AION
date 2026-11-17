@@ -39,10 +39,7 @@ export async function fetchDevices() {
     if (data.status === 'ok' && Array.isArray(data.devices)) {
       cachedDevices = data.devices;
       
-      const userSelected = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('aion_selected_device') : null;
-      if (userSelected && cachedDevices.some(d => d.id === userSelected)) {
-        selectedDeviceId = userSelected;
-      } else if (selectedDeviceId === 'home' || selectedDeviceId === 'assistant' || selectedDeviceId === 'all') {
+      if (selectedDeviceId === 'home' || selectedDeviceId === 'assistant' || selectedDeviceId === 'all') {
         // Keep the chosen application view while device information refreshes.
       } else if (isClientOnMobile()) {
         // When client is mobile (e.g. iPhone), default active view to the iPhone itself
@@ -561,9 +558,6 @@ export async function saveDeviceEdit(id, patch) {
 
 export function selectDevice(id) {
   selectedDeviceId = id;
-  if (typeof sessionStorage !== 'undefined') {
-    sessionStorage.setItem('aion_selected_device', id);
-  }
   renderAll();
   window.dispatchEvent(new CustomEvent('aion:navigation', { detail: { id } }));
 
@@ -653,7 +647,7 @@ function renderActiveCanvasView() {
   const chatView = document.getElementById('canvasChatView');
   const homeView = document.getElementById('canvasHomeView');
   if (chatView) chatView.hidden = selectedDeviceId !== 'assistant';
-  if (homeView) homeView.style.display = selectedDeviceId === 'home' ? 'block' : 'none';
+  if (homeView) homeView.style.display = selectedDeviceId === 'home' ? 'grid' : 'none';
   document.body.classList.toggle('view-home', selectedDeviceId === 'home');
 
   if (selectedDeviceId === 'home') {

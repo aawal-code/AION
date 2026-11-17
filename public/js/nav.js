@@ -88,9 +88,16 @@ export function initNav() {
   let compact = false; try { compact = localStorage.getItem('aion_sidebar_compact') === 'true'; } catch {} setCompact(compact);
   document.getElementById('btnCollapseSidebar')?.addEventListener('click', () => { compact = !compact; setCompact(compact); try { localStorage.setItem('aion_sidebar_compact', String(compact)); } catch {} });
   const syncMobile = (id) => { for (const [name, selected] of [['mobileNavHome', id === 'home'], ['mobileNavChat', id === 'assistant'], ['mobileNavDevices', id !== 'home' && id !== 'assistant']]) { const button = document.getElementById(name); if (button) { if (selected) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); } } };
-  window.addEventListener('aion:navigation', (event) => syncMobile(event.detail.id)); syncMobile('home');
+  window.addEventListener('aion:navigation', (event) => syncMobile(event.detail.id)); syncMobile('home'); setActiveNav('home');
   const go = (id) => { setActiveNav(id); if (typeof window.aionSelectDevice === 'function') window.aionSelectDevice(id); };
   document.getElementById('navItemHome')?.addEventListener('click', () => go('home'));
+  for (const [buttonId, panelId] of [['navItemProjects', 'projectManage'], ['navItemTasks', 'taskPanel']]) {
+    document.getElementById(buttonId)?.addEventListener('click', () => {
+      go('assistant');
+      const panel = document.getElementById(panelId);
+      if (panel) { panel.open = true; panel.querySelector('summary')?.focus(); panel.scrollIntoView({ block: 'nearest' }); }
+    });
+  }
   document.getElementById('mobileNavHome')?.addEventListener('click', () => go('home'));
   document.getElementById('mobileNavChat')?.addEventListener('click', () => go('assistant'));
   document.getElementById('mobileNavDevices')?.addEventListener('click', () => go('all'));

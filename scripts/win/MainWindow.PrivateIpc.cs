@@ -126,17 +126,23 @@ namespace AION.Desktop
             }
             // Do not release the authentication response until WebView2's
             // cookie manager confirms the exact update. Never expose values.
-            Task<List<CoreWebView2Cookie>> lookup = webView.CoreWebView2.CookieManager.GetCookiesAsync(PrivateOrigin + "/api/auth/status");
-            if (await Task.WhenAny(lookup, Task.Delay(3000)) != lookup) throw new IOException("Cookie update unavailable");
-            var observed = await lookup;
-            foreach (var pair in expected)
+            var clock = Stopwatch.StartNew();
+            while (clock.ElapsedMilliseconds < 3000)
             {
-                CoreWebView2Cookie found = null;
-                foreach (var cookie in observed) if (cookie.Name == pair.Key) { if (found != null) throw new IOException("Ambiguous session cookie"); found = cookie; }
-                if (pair.Value == null) { if (found != null) throw new IOException("Cookie removal unavailable"); }
-                else if (found == null || found.Value != pair.Value || !found.IsSecure || found.IsHttpOnly != (pair.Key != "aion_csrf") || found.SameSite != CoreWebView2CookieSameSiteKind.Strict) throw new IOException("Cookie update unavailable");
-                TracePrivate(traceId, "cookie_confirm_" + pair.Key + (found == null ? "_absent" : "_present"));
+                int remaining = Math.Max(1, 3000 - (int)clock.ElapsedMilliseconds);
+                Task<List<CoreWebView2Cookie>> lookup = webView.CoreWebView2.CookieManager.GetCookiesAsync(PrivateOrigin + "/api/auth/status");
+                if (await Task.WhenAny(lookup, Task.Delay(remaining)) != lookup) break;
+                var observed = await lookup; bool matches = true;
+                foreach (var pair in expected)
+                {
+                    CoreWebView2Cookie found = null;
+                    foreach (var cookie in observed) if (cookie.Name == pair.Key) { if (found != null) throw new IOException("Ambiguous session cookie"); found = cookie; }
+                    if (pair.Value == null ? found != null : found == null || found.Value != pair.Value || !found.IsSecure || found.IsHttpOnly != (pair.Key != "aion_csrf") || found.SameSite != CoreWebView2CookieSameSiteKind.Strict) matches = false;
+                }
+                if (matches) { TracePrivate(traceId, "cookie_updates_confirmed"); return; }
+                await Task.Delay(25);
             }
+            throw new IOException("Cookie update unavailable");
         }
 
         private CoreWebView2WebResourceResponse PrivateResponse(int status, Stream body, string headers)

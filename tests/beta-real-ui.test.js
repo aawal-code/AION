@@ -27,6 +27,7 @@ test('Master spec §2/§3/§5: real isolated host enrollment and project convers
   assert.equal((await context.request.get(`${origin}/api/devices`)).status(), 401);
   const bootstrap = await context.request.get(`${origin}/api/auth/local-session`, { headers: { 'x-aion-local-secret': secret }, maxRedirects: 0 }); assert.equal(bootstrap.status(), 200);
   const page = await context.newPage(); page.setDefaultTimeout(8000); await page.goto(origin, { waitUntil: 'domcontentloaded' });
+  await page.locator('#hostStatusButton').click();
   await page.locator('#securityOwnerName').fill('Isolated owner'); await page.locator('#btnSecurityEnroll').click();
   await page.locator('#securityOneTimeKey').waitFor({ state: 'visible', timeout: 10000 }); await page.locator('#securityRecoveryConfirmed').check(); await page.locator('#btnSecurityDismissRecovery').click();
   await page.waitForFunction(async () => (await (await fetch('/api/auth/status')).json()).authenticated === true);

@@ -58,11 +58,24 @@ test('Master spec §1/§2/§5: actual private IPC desktop enrolls a fresh Owner 
   assert.ok(browser, 'actual WebView2 debugging endpoint was not available');
   const page = browser.contexts().flatMap(context => context.pages())[0]; assert.ok(page); page.setDefaultTimeout(15000);
   const failures = []; page.on('pageerror', error => failures.push(`script: ${error.message}`)); page.on('response', response => { if (response.status() >= 400) failures.push(`${response.status()} ${new URL(response.url()).pathname}`); });
+  await page.locator('#canvasHomeView').waitFor({ state: 'visible', timeout: 20000 });
+  assert.equal(await page.locator('#settingsModal').evaluate(el => el.classList.contains('active')), false, 'startup remains on Home');
+  if (process.env.AION_TEST_HOME_SCREENSHOT) await page.screenshot({ path: process.env.AION_TEST_HOME_SCREENSHOT });
+  if (process.env.AION_TEST_MOBILE_SCREENSHOT) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.locator('#mobileNavHome').isVisible(), true);
+    await delay(600);
+    await page.screenshot({ path: process.env.AION_TEST_MOBILE_SCREENSHOT });
+    await page.setViewportSize({ width: 1280, height: 800 });
+  }
+  await page.locator('#hostStatusButton').click();
   try { await page.locator('#securityOwnerName').waitFor({ state: 'visible', timeout: 20000 }); }
   catch (error) { t.diagnostic(`URL ${page.url()}; security status ${await page.locator('#securityStatus').textContent()}; errors ${JSON.stringify(failures)}`); throw error; }
   await page.locator('#securityOwnerName').fill('Isolated owner'); await page.locator('#btnSecurityEnroll').click();
   await page.locator('#securityOneTimeKey').waitFor({ state: 'visible', timeout: 15000 });
   await waitForAuthenticated(page);
+  try { await page.waitForFunction(() => document.querySelector('#hostStatusButton')?.dataset.state === 'authenticated'); }
+  catch (error) { t.diagnostic(`Host indicator: ${await page.locator('#hostStatusButton').getAttribute('data-state')}; label: ${await page.locator('#hostStatusText').textContent()}; page errors: ${JSON.stringify(failures)}; auth traces: ${traceLines.filter(line => /session_|cookie_commit|cookie_confirm|request_error/.test(line)).slice(-35).join(' | ')}`); throw error; }
   await page.locator('#securityRecoveryConfirmed').check(); await page.locator('#btnSecurityDismissRecovery').click();
   const cookieProbe = await page.evaluate(async () => { const normal = await fetch('/api/assistant/projects'); const omitted = await fetch('/api/assistant/projects', { credentials: 'omit' }); return { normal: normal.status, normalTrace: normal.headers.get('x-aion-debug-request'), omitted: omitted.status, omittedTrace: omitted.headers.get('x-aion-debug-request') }; });
   if (cookieProbe.omitted !== 401 || cookieProbe.normal !== 200) t.diagnostic(`Synthetic cookie-header probe: ${JSON.stringify(cookieProbe)}; cookie commits: ${traceLines.filter(line => /cookie_(commit|set|confirm)/.test(line)).join(' | ')}; session outcomes: ${traceLines.filter(line => /session_(valid|absent_or_invalid|error)/.test(line)).slice(-10).join(' | ')}`);
@@ -108,6 +121,14 @@ test('Master spec §1/§2/§5: actual private IPC desktop enrolls a fresh Owner 
   await page.locator('#btnCloseSettings').click(); await page.locator('#navItemAssistant').click();
   await page.locator('#btnNewProject').click(); await page.locator('#newProjectName').fill('Isolated IPC project'); await page.locator('#newProjectForm button[type=submit]').click();
   await page.getByRole('button', { name: 'Isolated IPC project' }).waitFor({ state: 'visible' });
+  await page.locator('#projectManage summary').click();
+  await page.locator('#projectRename').fill('Renamed IPC project'); await page.locator('#projectRenameForm button[type=submit]').click();
+  await page.getByRole('button', { name: 'Renamed IPC project' }).waitFor({ state: 'visible' });
+  await page.locator('#projectArchive').click(); await page.waitForFunction(() => document.querySelector('#projectArchive')?.textContent === 'Restore');
+  await page.locator('#projectArchive').click(); await page.waitForFunction(() => document.querySelector('#projectArchive')?.textContent === 'Archive');
+  await page.locator('#projectRename').fill('Isolated IPC project'); await page.locator('#projectRenameForm button[type=submit]').click();
+  await page.getByRole('button', { name: 'Isolated IPC project' }).waitFor({ state: 'visible' });
+  await page.locator('#projectManage summary').click();
   const devices = await page.evaluate(async () => (await fetch('/api/devices')).status); assert.equal(devices, 200);
   await page.locator('#btnNewChat').click(); await page.locator('#assistantSessionsList .assistant-session-item').first().waitFor({ state: 'visible' });
   await page.locator('#targetProviderSelect').selectOption('ollama'); await page.locator('#targetModelSelect').fill('synthetic-model'); await page.locator('#targetModelSelect').blur();
@@ -172,6 +193,12 @@ test('Master spec §1/§2/§5: actual private IPC desktop enrolls a fresh Owner 
   try { await waitForAuthenticated(reopened); }
   catch (error) { const diagnostic = await reopened.evaluate(async () => { try { const r = await fetch('/api/auth/status', { signal: AbortSignal.timeout(3000) }); const d = await r.json(); return { status: r.status, authenticated: d.authenticated, trace: r.headers.get('x-aion-debug-request'), cookieNames: document.cookie.split(';').map(x => x.trim().split('=')[0]) }; } catch (e) { return { error: e.name, cookieNames: document.cookie.split(';').map(x => x.trim().split('=')[0]) }; } }); const statusTrace = [...traceLines].reverse().find(line => line.endsWith('intercept_auth_status')); const id = statusTrace?.split(' ')[3]; t.diagnostic(`Reopened security status: ${await reopened.locator('#securityStatus').textContent()}; ${JSON.stringify(diagnostic)}; trace ${id || 'none'}: ${traceLines.filter(line => line.split(' ')[3] === id).join(' | ')}; recent: ${traceLines.slice(-60).join(' | ')}`); throw error; }
   assert.equal(await reopened.evaluate(async () => (await (await fetch('/api/auth/status')).json()).owner.id), ownerId);
+  assert.equal(await reopened.locator('#canvasHomeView').isVisible(), true, 'restart opens Home');
+  await reopened.locator('#navItemSettings').click();
+  assert.equal(await reopened.locator('#settingsPanel-general').evaluate(el => el.classList.contains('active')), true, 'Settings opens its default tab');
+  await reopened.locator('[data-settings-tab="security"]').click(); await reopened.locator('#btnCloseSettings').click(); await reopened.locator('#navItemSettings').click();
+  assert.equal(await reopened.locator('#settingsPanel-general').evaluate(el => el.classList.contains('active')), true, 'reopening Settings resets its tab');
+  await reopened.locator('#btnCloseSettings').click();
   await reopened.locator('#navItemAssistant').click(); await reopened.getByRole('button', { name: 'Isolated IPC project' }).waitFor({ state: 'visible' });
   await reopened.getByRole('button', { name: 'Isolated IPC project' }).click(); await reopened.getByText('A persisted question').waitFor({ state: 'visible' });
   await reopened.locator('#btnOpenSettings').click(); await reopened.locator('[data-settings-tab="vault"]').click();

@@ -792,6 +792,7 @@ export function initSettings() {
   if (settingsInitialized) return; settingsInitialized = true;
   // Modal open triggers
   document.getElementById('btnOpenSettings')?.addEventListener('click', () => openSettings('general'));
+  document.getElementById('navItemSettings')?.addEventListener('click', () => openSettings('general'));
   document.getElementById('btnMobileSettings')?.addEventListener('click', () => openSettings('general'));
   document.getElementById('btnOpenSecurityFromNetwork')?.addEventListener('click', () => { switchTab('security'); loadSecurityPanel(); });
   window.aionOpenSecurity = () => openSettings('security');
