@@ -4277,6 +4277,8 @@ html[dir="rtl"] .apple-switch input:checked + .apple-switch-slider::before {
 
 .assistant-projects-sidebar { overflow-y: auto; min-height: 0; }
 .assistant-project-manage { flex-shrink: 0; }
+.session-item-content[role="button"] { cursor: pointer; border-radius: var(--radius-xs); }
+.session-item-content[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .task-entry { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
 .task-entry p { margin: 6px 0; }
 .task-input-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 140px; overflow-y: auto; }
@@ -4317,6 +4319,8 @@ html[dir="rtl"] .apple-switch input:checked + .apple-switch-slider::before {
 }
 @media (max-width: 768px) {
   .sidebar-collapse-control { display: none; }
+  .assistant-projects-sidebar { max-height: min(36dvh, 280px); overscroll-behavior: contain; }
+  #btnToggleFullscreenChat, .chat-suggestions-wrapper { display: none; }
   .mobile-bottom-nav { display: flex; position: fixed; z-index: 96; inset-inline: 0; bottom: 0; padding: 6px 6px max(6px, env(safe-area-inset-bottom)); background: var(--color-surface-solid); border-top: 1px solid var(--border); }
   .mobile-bottom-nav button { flex: 1; min-width: 0; min-height: 44px; color: var(--text-secondary); font-size: 12px; }
   .mobile-bottom-nav button[aria-current="page"] { color: var(--text-primary); font-weight: 700; }

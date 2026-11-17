@@ -25,6 +25,7 @@ let cachedSessions = [];
 let activeProjectId = 'aion';
 let activeSessionId = null;
 let activeChatController = null;
+let conversationLoadVersion = 0;
 let activeMode = 'ask'; // 'ask' | 'plan' | 'execute'
 let speechRecognitionInstance = null;
 let isListening = false;
@@ -42,8 +43,7 @@ let currentTarget = {
  */
 export async function initAssistantWorkspace() {
   window.addEventListener('aion:authenticated', () => { loadProjects(); loadExecutionTarget(); });
-  await loadProjects();
-  await loadExecutionTarget();
+  window.addEventListener('aion:languagechange', updateProjectHeader);
   setupTargetSelector();
   setupModeToggle();
   setupNewProjectButton();
@@ -52,6 +52,7 @@ export async function initAssistantWorkspace() {
   setupNewChatButton();
   setupFullscreenChat();
   setupSpeechRecognition();
+  await Promise.all([loadProjects(), loadExecutionTarget()]);
 }
 
 /**
@@ -73,52 +74,18 @@ export async function loadExecutionTarget() {
 }
 
 export function applyTargetToUi() {
-  const cliBtn = document.getElementById('targetModeCli');
-  const apiBtn = document.getElementById('targetModeApi');
-  const cliWrap = document.getElementById('targetCliWrap');
   const apiWrap = document.getElementById('targetApiWrap');
-  const cliSelect = document.getElementById('targetCliSelect');
   const provSelect = document.getElementById('targetProviderSelect');
   const modelSelect = document.getElementById('targetModelSelect');
 
-  const isCli = currentTarget.runtimeMode === 'cli';
-  if (cliBtn) cliBtn.classList.toggle('active', isCli);
-  if (apiBtn) apiBtn.classList.toggle('active', !isCli);
-
-  if (cliWrap) cliWrap.style.display = isCli ? 'inline-flex' : 'none';
-  if (apiWrap) apiWrap.style.display = !isCli ? 'inline-flex' : 'none';
-
-  if (cliSelect && currentTarget.cliProfile) cliSelect.value = currentTarget.cliProfile;
+  if (apiWrap) apiWrap.style.display = 'inline-flex';
   if (provSelect && currentTarget.apiProvider) provSelect.value = currentTarget.apiProvider;
   if (modelSelect && currentTarget.apiModel) modelSelect.value = currentTarget.apiModel;
 }
 
 export function setupTargetSelector() {
-  const cliBtn = document.getElementById('targetModeCli');
-  const apiBtn = document.getElementById('targetModeApi');
-  const cliSelect = document.getElementById('targetCliSelect');
   const provSelect = document.getElementById('targetProviderSelect');
   const modelSelect = document.getElementById('targetModelSelect');
-
-  cliBtn?.addEventListener('click', () => {
-    currentTarget.runtimeMode = 'cli';
-    applyTargetToUi();
-    persistTarget();
-    showToast('Runtime: CLI Agent Mode', 'check');
-  });
-
-  apiBtn?.addEventListener('click', () => {
-    currentTarget.runtimeMode = 'api';
-    applyTargetToUi();
-    persistTarget();
-    showToast('Runtime: Direct API Mode', 'check');
-  });
-
-  cliSelect?.addEventListener('change', (e) => {
-    currentTarget.cliProfile = e.target.value;
-    persistTarget();
-    showToast(`CLI Agent: ${currentTarget.cliProfile}`, 'check');
-  });
 
   provSelect?.addEventListener('change', (e) => {
     currentTarget.apiProvider = e.target.value;
@@ -160,10 +127,11 @@ export async function loadProjects() {
       cachedProjects = data.projects;
       if (!cachedProjects.some((p) => p.id === activeProjectId)) {
         activeProjectId = cachedProjects[0]?.id || 'aion';
+        activeSessionId = null;
       }
       renderProjectList();
       updateProjectHeader();
-      await loadProjectMessages(activeProjectId);
+      await loadProjectMessages(activeProjectId, activeSessionId);
     }
   } catch (err) {
     console.debug('[Assistant] Projects fetch error:', err.message);
@@ -209,6 +177,7 @@ export function renderProjectList() {
  */
 export async function selectProject(projectId) {
   activeChatController?.abort();
+  conversationLoadVersion++;
   activeProjectId = projectId;
   activeSessionId = null;
   renderProjectList();
@@ -230,7 +199,7 @@ export function updateProjectHeader() {
   if (nameEl) nameEl.textContent = project?.name || 'AION';
   if (contextEl) contextEl.textContent = project?.pinned_context || project?.path || 'Active Workspace';
   if (modeInd) {
-    modeInd.textContent = activeMode.toUpperCase();
+    modeInd.textContent = t({ ask: 'chatModeAsk', plan: 'chatModePlan', execute: 'chatModeExecute' }[activeMode]);
     modeInd.className = `assistant-mode-indicator ${activeMode}`;
   }
 }
@@ -239,14 +208,15 @@ export function updateProjectHeader() {
  * Loads messages for active project
  */
 export async function loadProjectMessages(projectId, specificSessionId = null) {
+  const version = ++conversationLoadVersion;
   try {
     const sessRes = await assistantFetch(`/api/assistant/projects/${encodeURIComponent(projectId)}/sessions`);
     if (!sessRes.ok) return;
     const sessData = await sessRes.json();
+    if (version !== conversationLoadVersion || projectId !== activeProjectId) return;
 
     if (sessData.status === 'ok' && Array.isArray(sessData.sessions)) {
       cachedSessions = sessData.sessions;
-      renderSessionList();
 
       const selectedSession = specificSessionId
         ? cachedSessions.find((s) => s.id === specificSessionId)
@@ -254,11 +224,13 @@ export async function loadProjectMessages(projectId, specificSessionId = null) {
 
       if (selectedSession) {
         activeSessionId = selectedSession.id;
+        renderSessionList();
         setAssistantMode(selectedSession.mode || 'ask', false);
 
-        const msgRes = await assistantFetch(`/api/assistant/sessions/${encodeURIComponent(activeSessionId)}/messages`);
+        const msgRes = await assistantFetch(`/api/assistant/sessions/${encodeURIComponent(selectedSession.id)}/messages`);
         if (msgRes.ok) {
           const msgData = await msgRes.json();
+          if (version !== conversationLoadVersion || projectId !== activeProjectId || activeSessionId !== selectedSession.id) return;
           if (msgData.status === 'ok' && Array.isArray(msgData.messages)) {
             renderChatMessages(msgData.messages);
             return;
@@ -269,6 +241,7 @@ export async function loadProjectMessages(projectId, specificSessionId = null) {
 
     // Default welcome if no session exists yet
     activeSessionId = null;
+    renderSessionList();
     renderChatMessages([
       {
         role: 'assistant',
@@ -295,7 +268,7 @@ export function renderSessionList() {
     const title = s.title || `Chat ${formatTime(s.created_at)}`;
     return `
       <div class="assistant-session-item ${isActive ? 'active' : ''}" data-session-id="${escapeHtml(s.id)}">
-        <div class="session-item-content">
+        <div class="session-item-content" role="button" tabindex="0" aria-pressed="${isActive}">
           <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
@@ -321,14 +294,17 @@ export function renderSessionList() {
 
   // Wire click to switch session
   container.querySelectorAll('.assistant-session-item').forEach((item) => {
-    item.addEventListener('click', (e) => {
-      if (e.target.closest('.btn-rename-session') || e.target.closest('.btn-delete-session')) return;
+    const open = () => {
       const sId = item.getAttribute('data-session-id');
       if (sId && sId !== activeSessionId) {
+        activeChatController?.abort();
         activeSessionId = sId;
         loadProjectMessages(activeProjectId, sId);
       }
-    });
+    };
+    const target = item.querySelector('.session-item-content');
+    target?.addEventListener('click', open);
+    target?.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
   });
 
   // Wire rename
@@ -385,11 +361,13 @@ export function setupNewChatButton() {
 
   btn.addEventListener('click', async () => {
     try {
+      activeChatController?.abort();
+      const projectId = activeProjectId;
       const res = await assistantFetch('/api/assistant/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectId: activeProjectId,
+          projectId,
           title: `Chat ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
           mode: activeMode,
         }),
@@ -397,6 +375,7 @@ export function setupNewChatButton() {
       if (res.ok) {
         const data = await res.json();
         if (data.status === 'ok' && data.session) {
+          if (projectId !== activeProjectId) return;
           showToast('New Chat started', 'check');
           await loadProjectMessages(activeProjectId, data.session.id);
         }
@@ -445,7 +424,7 @@ export function setAssistantMode(mode, triggerToast = true) {
 
     const modeInd = document.getElementById('assistantModeIndicator');
     if (modeInd) {
-      modeInd.textContent = activeMode.toUpperCase();
+      modeInd.textContent = t({ ask: 'chatModeAsk', plan: 'chatModePlan', execute: 'chatModeExecute' }[activeMode]);
       modeInd.className = `assistant-mode-indicator ${activeMode}`;
     }
 
@@ -506,7 +485,7 @@ async function refreshProjectManagement() {
   const project = cachedProjects.find((item) => item.id === activeProjectId);
   if (!project) return;
   const name = document.getElementById('projectRename'); if (name) name.value = project.name;
-  const archive = document.getElementById('projectArchive'); if (archive) archive.textContent = project.archived_at ? 'Restore' : 'Archive';
+  const archive = document.getElementById('projectArchive'); if (archive) { archive.dataset.i18n = project.archived_at ? 'restoreProject' : 'archiveProject'; archive.textContent = t(archive.dataset.i18n); }
   const list = document.getElementById('projectFolders'); if (!list) return;
   try { const res = await assistantFetch(`/api/assistant/projects/${encodeURIComponent(project.id)}/folders`); if (!res.ok) throw new Error('Unable to load folders'); const data = await res.json(); list.replaceChildren(...data.folders.map((folder) => { const item = document.createElement('li'); item.textContent = folder.path; return item; })); }
   catch { list.textContent = 'Unable to load folders.'; }

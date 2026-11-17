@@ -1015,7 +1015,7 @@
             <!-- Left-Hand Project Rail / List -->
             <aside class="assistant-projects-sidebar">
               <div class="assistant-projects-header">
-                <span class="assistant-projects-title">Projects</span>
+                <span class="assistant-projects-title" data-i18n="navProjects">Projects</span>
                 <button class="btn-subtle" id="btnNewProject" type="button" title="New Project" aria-label="New project" aria-expanded="false" aria-controls="newProjectForm">
                   <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -1024,7 +1024,7 @@
                 </button>
               </div>
               <form id="newProjectForm" class="assistant-project-form" hidden>
-                <label for="newProjectName">Project name</label>
+                <label for="newProjectName" data-i18n="projectName">Project name</label>
                 <input class="modal-input" id="newProjectName" maxlength="160" required>
                 <label for="newProjectPath">Folder path (reference only)</label>
                 <input class="modal-input" id="newProjectPath" maxlength="2048" placeholder="Optional">
@@ -1038,12 +1038,12 @@
               </div>
 
               <details class="assistant-project-manage" id="projectManage">
-                <summary>Manage selected project</summary>
+                <summary data-i18n="manageProject">Manage selected project</summary>
                 <form id="projectRenameForm" class="assistant-project-form">
-                  <label for="projectRename">Project name</label><input id="projectRename" class="modal-input" maxlength="160" required>
-                  <button type="submit" class="btn-secondary">Rename</button>
+                  <label for="projectRename" data-i18n="projectName">Project name</label><input id="projectRename" class="modal-input" maxlength="160" required>
+                  <button type="submit" class="btn-secondary" data-i18n="renameProject">Rename</button>
                 </form>
-                <button type="button" class="btn-secondary" id="projectArchive">Archive</button>
+                <button type="button" class="btn-secondary" id="projectArchive" data-i18n="archiveProject">Archive</button>
                 <form id="projectFolderForm" class="assistant-project-form">
                   <label for="projectFolderPath">Link existing folder</label><input id="projectFolderPath" class="modal-input" placeholder="Absolute path" required>
                   <button type="submit" class="btn-secondary">Link folder</button>
@@ -1052,7 +1052,7 @@
                 <ul id="projectFolders"></ul><p id="projectManageError" role="alert" hidden></p>
               </details>
               <details class="assistant-project-manage" id="taskPanel">
-                <summary>Tasks and approvals</summary>
+                <summary data-i18n="tasksApprovals">Tasks and approvals</summary>
                 <p>Propose a bounded action. File access and arbitrary commands are unavailable.</p>
                 <form id="taskProposalForm" class="assistant-project-form">
                   <label for="taskAction">Action</label><select id="taskAction" class="modal-input"><option value="hash_text">Hash text</option><option value="workstation_lock">Request workstation lock</option></select>
@@ -1066,7 +1066,7 @@
               </details>
               <!-- Project Chats / Threads Rail -->
               <div class="assistant-threads-header" style="margin-top: 16px;">
-                <span class="assistant-projects-title">Chats</span>
+                <span class="assistant-projects-title" data-i18n="chatList">Chats</span>
                 <button class="btn-subtle" id="btnNewChat" type="button" title="New Chat">
                   <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -1091,26 +1091,8 @@
                 </div>
                 
                 <div class="assistant-controls-row">
-                  <!-- Execution Target Selector (CLI vs Direct API) -->
+                  <!-- Provider and model selection -->
                   <div class="execution-target-bar" id="executionTargetBar">
-                    <div class="target-mode-segmented" id="targetModeToggle" title="Execution Runtime Engine">
-                      <button class="target-mode-btn" id="targetModeCli" data-runtime="cli" type="button" disabled title="CLI execution is not yet available">CLI</button>
-                      <button class="target-mode-btn" id="targetModeApi" data-runtime="api" type="button">API</button>
-                    </div>
-
-                    <!-- CLI Agent Selector -->
-                    <div class="target-selector-wrap" id="targetCliWrap">
-                      <select class="target-select" id="targetCliSelect" aria-label="Select CLI Agent">
-                        <option value="agy">agy (Antigravity)</option>
-                        <option value="opencode">opencode</option>
-                        <option value="claude">claude</option>
-                        <option value="codex">codex</option>
-                        <option value="gemini">gemini</option>
-                        <option value="cursor">cursor</option>
-                        <option value="ollama">ollama</option>
-                      </select>
-                    </div>
-
                     <!-- Direct API & Model Selector -->
                     <div class="target-selector-wrap" id="targetApiWrap" style="display: none;">
                       <select class="target-select" id="targetProviderSelect" aria-label="Select LLM Provider">
@@ -1128,9 +1110,9 @@
 
                   <!-- 3-Way Mode Toggle (Ask, Plan, Execute) -->
                   <div class="assistant-mode-segmented" id="assistantModeToggle">
-                    <button class="assistant-mode-btn active" id="modeBtnAsk" data-mode="ask" type="button">Ask</button>
-                    <button class="assistant-mode-btn" id="modeBtnPlan" data-mode="plan" type="button">Plan</button>
-                    <button class="assistant-mode-btn" id="modeBtnExecute" data-mode="execute" type="button">Execute</button>
+                    <button class="assistant-mode-btn active" id="modeBtnAsk" data-mode="ask" type="button" data-i18n="chatModeAsk">Ask</button>
+                    <button class="assistant-mode-btn" id="modeBtnPlan" data-mode="plan" type="button" data-i18n="chatModePlan">Plan</button>
+                    <button class="assistant-mode-btn" id="modeBtnExecute" data-mode="execute" type="button" data-i18n="chatModeExecute">Execute</button>
                   </div>
 
                   <!-- Fullscreen Chat Toggle -->

@@ -132,6 +132,12 @@ test('Master spec §1/§2/§5: actual private IPC desktop enrolls a fresh Owner 
   const devices = await page.evaluate(async () => (await fetch('/api/devices')).status); assert.equal(devices, 200);
   await page.locator('#btnNewChat').click(); await page.locator('#assistantSessionsList .assistant-session-item').first().waitFor({ state: 'visible' });
   await page.locator('#targetProviderSelect').selectOption('ollama'); await page.locator('#targetModelSelect').fill('synthetic-model'); await page.locator('#targetModelSelect').blur();
+  if (process.env.AION_TEST_CHAT_MOBILE_SCREENSHOT) {
+    await page.setViewportSize({ width: 390, height: 844 }); await delay(600);
+    assert.equal(await page.locator('#canvasChatView').isVisible(), true);
+    await page.screenshot({ path: process.env.AION_TEST_CHAT_MOBILE_SCREENSHOT });
+    await page.setViewportSize({ width: 1280, height: 800 }); await delay(600);
+  }
   await page.locator('#commandInput').fill('A persisted question'); await page.locator('#commandBarForm').dispatchEvent('submit');
   await page.getByText('Synthetic streamed answer', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
   assert.equal(providerActive, true, 'synthetic stream remains active');
