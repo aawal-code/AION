@@ -28,6 +28,10 @@ test('Master spec §1/§2: browser key proof and explicit Owner approval enforce
   await assert.rejects(store.approveBrowserPairingInvitation({ invitationId: invitation.invitationId, verificationCode: '000000' }, actor));
   const pending = await store.claimBrowserPairingInvitation(claim);
   assert.match(pending.verificationCode, /^\d{6}$/);
+  const statusSignature = crypto.sign(null, Buffer.from(`aion-browser-status-v1:${challenge.invitationId}:${hostname}:${challenge.challenge}`), phone.privateKey).toString('base64url');
+  const statusRequest = { invitationId: invitation.invitationId, hostname, signature: statusSignature };
+  assert.equal((await store.getBrowserPairingStatus(statusRequest)).status, 'pending-owner-approval');
+  await assert.rejects(store.getBrowserPairingStatus({ ...statusRequest, signature: crypto.randomBytes(64).toString('base64url') }), /proof/);
   await assert.rejects(store.claimBrowserPairingInvitation(claim));
   const requests = await store.listBrowserPairingRequests(actor);
   assert.equal(requests[0].verificationCode, pending.verificationCode);
@@ -36,12 +40,17 @@ test('Master spec §1/§2: browser key proof and explicit Owner approval enforce
   await assert.rejects(store.approveBrowserPairingInvitation({ invitationId: invitation.invitationId, verificationCode: pending.verificationCode }, { role: 'limited' }));
   const approved = await store.approveBrowserPairingInvitation({ invitationId: invitation.invitationId, verificationCode: pending.verificationCode }, actor);
   assert.equal(approved.role, 'trusted'); assert.equal(approved.capabilities.includes('sync:replicate'), false);
+  assert.equal((await store.getBrowserPairingStatus(statusRequest)).deviceId, approved.deviceId);
   await assert.rejects(store.approveBrowserPairingInvitation({ invitationId: invitation.invitationId, verificationCode: pending.verificationCode }, actor));
   const login = await store.createChallenge(approved.deviceId);
   const session = await store.authenticateChallenge({ challengeId: login.challengeId, signature: crypto.sign(null, Buffer.from(login.signingPayload), phone.privateKey).toString('base64url') });
   assert.ok(await store.authorize(session.token, 'conversation:read'));
   await store.revokeDevice(approved.deviceId, actor);
   assert.equal(await store.authorize(session.token, 'conversation:read'), null);
+  await assert.rejects(store.getBrowserPairingStatus(statusRequest), /revoked/);
+  const cancelled = await store.createBrowserPairingInvitation({ hostname }, actor);
+  await store.cancelBrowserPairingInvitation(cancelled.invitationId, actor);
+  await assert.rejects(store.getBrowserPairingChallenge(cancelled.invitationId, hostname));
   const expired = await store.createBrowserPairingInvitation({ hostname }, actor);
   const db = new DatabaseSync(process.env.AION_SECURITY_DB_PATH);
   db.prepare("UPDATE browser_pairing_invitations SET expires_at='2000-01-01T00:00:00.000Z' WHERE id=?").run(expired.invitationId); db.close();

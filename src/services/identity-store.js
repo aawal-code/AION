@@ -201,6 +201,24 @@ export async function listBrowserPairingRequests(actor) {
   if (!actor || actor.role !== ROLES.OWNER) throw new Error('Owner authorization required');
   return (await database()).prepare('SELECT id,hostname,role,expires_at AS expiresAt,claimed_name AS name,verification_code AS verificationCode FROM browser_pairing_invitations WHERE claimed_at IS NOT NULL AND approved_at IS NULL AND cancelled_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 50').all(now());
 }
+export async function getBrowserPairingStatus({ invitationId, hostname, signature }) {
+  const db = await database();
+  const row = db.prepare('SELECT * FROM browser_pairing_invitations WHERE id=?').get(String(invitationId || ''));
+  if (!row || row.hostname !== hostname || !row.claimed_public_key || row.cancelled_at || Date.parse(row.expires_at) <= Date.now()) throw new Error('Pairing invitation is invalid or expired');
+  const payload = `aion-browser-status-v1:${row.id}:${row.hostname}:${row.challenge}`;
+  if (!crypto.verify(null, Buffer.from(payload), row.claimed_public_key, Buffer.from(String(signature || ''), 'base64url'))) throw new Error('Device proof is invalid');
+  if (row.approved_device_id && !db.prepare('SELECT 1 FROM devices WHERE id=? AND revoked_at IS NULL').get(row.approved_device_id)) throw new Error('Pairing device is revoked');
+  return { status: row.approved_at ? 'approved' : 'pending-owner-approval', deviceId: row.approved_at ? row.approved_device_id : null, expiresAt: row.expires_at };
+}
+export async function cancelBrowserPairingInvitation(invitationId, actor) {
+  if (!actor || actor.role !== ROLES.OWNER) throw new Error('Owner authorization required');
+  const db = await database(); db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = db.prepare('UPDATE browser_pairing_invitations SET cancelled_at=? WHERE id=? AND cancelled_at IS NULL AND approved_at IS NULL AND expires_at>?').run(now(), String(invitationId || ''), now());
+    if (result.changes !== 1) throw new Error('Pairing invitation is invalid or expired');
+    audit(db, 'browser_pairing.cancelled', actor.deviceId); db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
 export async function approveBrowserPairingInvitation({ invitationId, verificationCode }, actor) {
   if (!actor || actor.role !== ROLES.OWNER) throw new Error('Owner authorization required');
   const db = await database(); db.exec('BEGIN IMMEDIATE');
