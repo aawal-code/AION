@@ -997,13 +997,30 @@
         <!-- CANVAS VIEW 2: ALL DEVICES OVERVIEW                             -->
         <!-- =============================================================== -->
         <div id="canvasAllDevicesView" style="display: none;">
+          <div id="devicesOverview">
           <header class="view-header">
             <h1 class="view-title" data-i18n="allDevicesTitle">All Devices</h1>
             <p class="view-subtitle" data-i18n="allDevicesSubtitle">Connected workstations, laptops, and mobile peers</p>
           </header>
+          <button class="mobile-access-entry" id="openMobileAccess" type="button">
+            <span><strong data-i18n="mobileAccessTitle">Mobile Access &amp; Pairing</strong><small data-i18n="mobileAccessEntry">Check Tailscale and learn how mobile access works.</small></span>
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+          </button>
           <div class="device-cards-grid" id="allDevicesCardsGrid">
             <!-- Populated dynamically by devices.js -->
           </div>
+          </div>
+          <section id="mobileAccessPanel" class="mobile-access-panel" aria-labelledby="mobileAccessTitle" hidden>
+            <button id="backToDevices" class="btn-subtle mobile-access-back" type="button" data-i18n="mobileAccessBack">Back to My Devices</button>
+            <header class="view-header"><h1 class="view-title" id="mobileAccessTitle" tabindex="-1" data-i18n="mobileAccessTitle">Mobile Access &amp; Pairing</h1><p class="view-subtitle" data-i18n="mobileAccessIntro">Connect a phone to this AION host through a private Tailscale network.</p></header>
+            <div class="mobile-access-notice" role="status"><strong data-i18n="mobileAccessUnavailable">Mobile access is not available yet.</strong><p data-i18n="mobileAccessUnavailableHelp">The authenticated mobile gateway and phone approval flow are still being completed. No mobile address or pairing code is available.</p></div>
+            <div class="mobile-access-section">
+              <div class="mobile-access-heading"><div><h2 data-i18n="mobileAccessTailscale">Tailscale on this PC</h2><p data-i18n="mobileAccessCheck">Check the local connection before setting up a phone.</p></div><button id="refreshMobileAccess" class="btn-secondary" type="button" data-i18n="mobileAccessRefresh">Refresh</button></div>
+              <p id="mobileAccessStatus" role="status" aria-live="polite" data-i18n="mobileAccessCheckPrompt">Select Refresh to check Tailscale.</p>
+              <dl class="mobile-access-details"><div><dt data-i18n="mobileAccessPc">PC name</dt><dd id="mobileAccessHostname">—</dd></div><div><dt>Tailscale IP</dt><dd id="mobileAccessIp">—</dd></div><div><dt data-i18n="mobileAccessDnsName">MagicDNS name</dt><dd id="mobileAccessDns">—</dd></div></dl>
+            </div>
+            <div class="mobile-access-section"><h2 data-i18n="mobileAccessPrepare">Prepare your devices</h2><ol><li data-i18n="mobileAccessStepPc">Install Tailscale on this Windows PC from tailscale.com/download and sign in.</li><li data-i18n="mobileAccessStepPhone">Install Tailscale on your iPhone or Android device from its app store and sign in to the same tailnet.</li><li data-i18n="mobileAccessStepTrust">Return here when AION mobile access is available. Tailscale membership alone does not approve an AION device.</li></ol></div>
+          </section>
         </div>
 
         <!-- =============================================================== -->
@@ -1480,17 +1497,6 @@
           <label class="form-label" for="securityDeviceKey">Ed25519 public key</label>
           <textarea class="modal-input security-key-input" id="securityDeviceKey" rows="4" spellcheck="false" placeholder="-----BEGIN PUBLIC KEY-----"></textarea>
           <button class="btn-primary" id="btnSecurityEnrollDevice" type="button">Approve device</button>
-        </div>
-        <div class="settings-group" id="securityPairing" hidden>
-          <div class="settings-group-title">Pair a device</div>
-          <p class="security-note">Create a five-minute invitation. The QR code contains only an invitation identifier; it is not a session credential. Approve a claimed device only after its matching code is confirmed.</p>
-          <button class="btn-primary" id="btnSecurityCreatePairing" type="button">Create pairing invitation</button>
-          <div id="securityPairingInvitation" class="security-one-time" hidden>
-            <div id="securityPairingQr" aria-label="Pairing invitation QR code"></div>
-            <p>Matching verification code: <code id="securityPairingCode"></code></p>
-            <p id="securityPairingExpiry" class="security-note"></p>
-          </div>
-          <div id="securityPairingRequests" class="security-list"></div>
         </div>
         <div class="settings-group" id="securityDevicesGroup" hidden><div class="settings-group-title">Approved devices</div><div id="securityDevicesList" class="security-list"></div></div>
         <div class="settings-group" id="securitySessionsGroup" hidden><div class="settings-group-title">Active sessions</div><div id="securitySessionsList" class="security-list"></div></div>

@@ -24,6 +24,7 @@ test('security contract rejects local impostors and enforces signed cookie sessi
   try {
     await waitFor(`${origin}/`);
     assert.equal((await fetch(`${origin}/api/devices`)).status, 401, 'anonymous loopback is not trusted');
+    assert.equal((await fetch(`${origin}/api/network/mesh`)).status, 401, 'anonymous clients cannot inspect Tailscale status');
     assert.equal((await fetch(`${origin}/api/auth/status`, { headers: { origin: 'http://evil.invalid' } })).status, 403, 'foreign origins are denied');
     assert.equal((await fetch(`${origin}/api/auth/local-session`)).status, 401, 'local address alone cannot mint bootstrap');
     assert.equal((await fetch(`${origin}/api/auth/local-session`, { headers: { 'x-aion-local-secret': secret, 'x-forwarded-proto': 'https' } })).status, 401, 'a proxy cannot redeem the local bootstrap');

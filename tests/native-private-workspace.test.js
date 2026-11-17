@@ -130,6 +130,13 @@ test('Master spec §1/§2/§5: actual private IPC desktop enrolls a fresh Owner 
   await page.getByRole('button', { name: 'Isolated IPC project' }).waitFor({ state: 'visible' });
   await page.locator('#projectManage summary').click();
   const devices = await page.evaluate(async () => (await fetch('/api/devices')).status); assert.equal(devices, 200);
+  await page.locator('#navItemAllDevices').click(); await page.locator('#openMobileAccess').click();
+  await page.waitForFunction(() => !document.querySelector('#mobileAccessStatus')?.textContent.includes('Checking'));
+  assert.equal(await page.locator('#mobileAccessTitle').isVisible(), true);
+  assert.equal(await page.locator('#mobileAccessPanel').getByText('Mobile access is not available yet.').isVisible(), true);
+  assert.equal(await page.locator('#securityPairingQr').count(), 0, 'no non-web pairing QR is offered');
+  if (process.env.AION_TEST_MOBILE_ACCESS_SCREENSHOT) await page.screenshot({ path: process.env.AION_TEST_MOBILE_ACCESS_SCREENSHOT });
+  await page.locator('#backToDevices').click(); await page.locator('#navItemAssistant').click();
   await page.locator('#btnNewChat').click(); await page.locator('#assistantSessionsList .assistant-session-item').first().waitFor({ state: 'visible' });
   await page.locator('#targetProviderSelect').selectOption('ollama'); await page.locator('#targetModelSelect').fill('synthetic-model'); await page.locator('#targetModelSelect').blur();
   if (process.env.AION_TEST_CHAT_MOBILE_SCREENSHOT) {

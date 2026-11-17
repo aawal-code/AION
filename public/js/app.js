@@ -41,6 +41,7 @@ import { initSettings, openSettings } from './settings.js';
 import { initScreenControl } from './screen-control.js';
 import { initAssistantWorkspace, sendAssistantPrompt } from './assistant.js';
 import { initHome } from './home.js';
+import { initMobileAccess } from './mobile-access.js';
 import { loadSecurityPanel } from './security.js';
 
 // ==========================================================================
@@ -1490,6 +1491,7 @@ if (typeof document !== 'undefined') {
 
     // 6. Smart Devices, WoL & Running Processes (Phase 2)
     initDevicesModule();
+    initMobileAccess();
     document.getElementById('btnRefreshProcesses')?.addEventListener('click', () => {
       fetchRunningProcesses();
     });

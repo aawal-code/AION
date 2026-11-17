@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import os from 'os';
 import { logEvent } from './sse.js';
 
@@ -51,8 +51,8 @@ export function parseTailscaleStatus(jsonStr) {
     }
 
     const certDomains = Array.isArray(data.CertDomains) ? data.CertDomains : [];
-    const isOnline = data.Self?.Online !== undefined ? Boolean(data.Self.Online) : isRunning;
-    const connected = isRunning && (isOnline || Boolean(ipv4 || ipv6));
+    const isOnline = data.Self?.Online === true;
+    const connected = isRunning && isOnline;
 
     return {
       connected: Boolean(connected),
@@ -119,7 +119,7 @@ export function getMeshStatus(timeoutMs = 3000) {
   }
 
   return new Promise((resolve) => {
-    exec('tailscale status --json', { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
+    execFile(process.platform === 'win32' ? 'tailscale.exe' : 'tailscale', ['status', '--json'], { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
       const lanIp = getLocalLanIp();
       let result;
       if (err || !stdout || !stdout.trim()) {
@@ -129,9 +129,16 @@ export function getMeshStatus(timeoutMs = 3000) {
           ipv6: null,
           hostname: typeof os.hostname === 'function' ? os.hostname() : null,
           lanIp,
+          cliAvailable: err?.code === 'ENOENT' ? false : null,
+          statusError: err?.code === 'ENOENT' ? 'cli_not_found' : 'status_unavailable',
         };
       } else {
         result = parseTailscaleStatus(stdout);
+        result.cliAvailable = true;
+        try {
+          const raw = JSON.parse(stdout);
+          result.statusError = typeof raw?.BackendState !== 'string' || (raw.BackendState.toLowerCase() === 'running' && typeof raw.Self?.Online !== 'boolean') ? 'invalid_status' : null;
+        } catch { result.statusError = 'invalid_status'; }
         result.lanIp = lanIp;
       }
       cachedMesh = result;
@@ -151,8 +158,9 @@ export async function getTailscaleHttpsStatus() {
   return {
     supported: false,
     dnsName,
-    httpsUrl: dnsName ? `https://${dnsName}` : null,
-    httpUrl: ipv4 ? `http://${ipv4}:5050` : null,
+    // No endpoint is published until a gateway and Serve mapping are verified.
+    httpsUrl: null,
+    httpUrl: null,
     tailscaleIp: ipv4 || null,
     connected: Boolean(mesh.connected),
   };

@@ -25,6 +25,9 @@ export async function handleGetMesh(req, res) {
       ipv4: mesh.ipv4,
       ipv6: mesh.ipv6,
       hostname: mesh.hostname,
+      dnsName: mesh.dnsName || null,
+      cliAvailable: mesh.cliAvailable ?? null,
+      statusError: mesh.statusError || null,
       lanIp,
       preferredIp,
     });

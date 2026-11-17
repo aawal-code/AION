@@ -4335,6 +4335,26 @@ html[dir="rtl"] .apple-switch input:checked + .apple-switch-slider::before {
 @media (max-width: 768px) { #canvasChatView[hidden] { display: none !important; } }
 .device-dot.unknown { background: var(--text-secondary); box-shadow: none; }
 
+/* Mobile access is a read-only preparation page until the gateway is verified. */
+#devicesOverview[hidden], #mobileAccessPanel[hidden] { display: none !important; }
+.mobile-access-entry { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 0 24px; padding: 18px 20px; text-align: start; color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.mobile-access-entry:hover { background: var(--surface-hover); }
+.mobile-access-entry strong, .mobile-access-entry small { display: block; }
+.mobile-access-entry small { margin-top: 5px; color: var(--text-secondary); font-size: 13px; }
+.mobile-access-entry:focus-visible, .mobile-access-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.mobile-access-panel { max-width: 760px; margin: 0 auto; }
+.mobile-access-back { margin-bottom: 20px; }
+.mobile-access-notice { padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.mobile-access-notice p, .mobile-access-section p { margin-top: 6px; color: var(--text-secondary); }
+.mobile-access-section { padding: 26px 0; border-bottom: 1px solid var(--border-subtle); }
+.mobile-access-section h2 { font-size: 18px; margin: 0; }
+.mobile-access-section ol { padding-inline-start: 22px; color: var(--text-secondary); line-height: 1.7; }
+.mobile-access-section li + li { margin-top: 8px; }
+.mobile-access-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.mobile-access-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-top: 20px; }
+.mobile-access-details dt { color: var(--text-secondary); font-size: 13px; }
+.mobile-access-details dd { margin: 4px 0 0; color: var(--text-primary); overflow-wrap: anywhere; }
+
 /* Legacy controls remain unavailable until authorized device transport exists. */
 #mobileSetupCard, #screenControlSection, #desktopPowerSection, #remoteActionsSection,
 #mobileCompanionDeck, #mediaDeckSection, #btnCanvasViewScreen, #btnCanvasWake,
