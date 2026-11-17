@@ -1,0 +1,5 @@
+# Mobile forwarding status
+
+The pinned gateway channel and loopback HTTP forwarding component are isolated building blocks. They are not connected to the desktop lifecycle, device authorization, or Tailscale Serve, and must not be enabled for production mobile traffic. The caller must supply a gateway certificate and fingerprint obtained through a trusted instance-bound channel, a verified external host, and an explicit route allowlist. The gateway remains responsible for origin, CSRF, device authentication, and capability checks.
+
+The focused tests cover a successful request, certificate and plaintext replacements, concurrency, bounded request and response sizes, a stalled backend, a disconnected backend, restart with the original identity, and forwarder shutdown. They do not establish secure gateway identity distribution, managed production process lifecycle, slow-client handling, actual gateway process crash and cleanup, Serve port takeover protection, or end-to-end mobile authorization. Those gates remain prerequisites to activation.
