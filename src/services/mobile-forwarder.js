@@ -44,6 +44,9 @@ export async function startMobileForwarder({ gateway, expectedHost, allowedPaths
     } catch { fail(502); }
     finally { clearTimeout(timer); if (backend) { backends.delete(backend); backend.destroy(); } active--; }
   });
+  // Limit sockets before HTTP headers arrive as well as active requests. Without
+  // this, incomplete headers can consume an unbounded number of connections.
+  server.maxConnections = maxConcurrent;
   server.on('connection', socket => { sockets.add(socket); socket.setTimeout(deadlineMs, () => socket.destroy()); socket.on('close', () => sockets.delete(socket)); });
   server.on('clientError', (_error, socket) => socket.destroy());
   server.on('checkContinue', (_req, res) => { res.writeHead(417, { connection: 'close' }); res.end(); });

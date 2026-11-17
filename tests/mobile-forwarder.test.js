@@ -8,6 +8,7 @@ import net from 'node:net';
 import tls from 'node:tls';
 import test from 'node:test';
 import * as x509 from '@peculiar/x509';
+import { startMobileForwarder } from '../src/services/mobile-forwarder.js';
 
 async function identity() {
   const algorithm = { name: 'ECDSA', namedCurve: 'P-256', hash: 'SHA-256' }, keys = await webcrypto.subtle.generateKey(algorithm, true, ['sign', 'verify']);
@@ -48,4 +49,17 @@ test('Master spec §1/§2: authenticated forwarding and replacement fail closed'
   await close(listener); listener = createGateway(id); await listen(listener, port);
   const concurrent = await Promise.all(Array.from({ length: 4 }, () => request(ready.port))); assert.ok(concurrent.every(r => r.status === 200));
   child.send({ type: 'stop' }); await once(child, 'exit'); await assert.rejects(request(ready.port));
+});
+
+test('Master spec §11: incomplete HTTP headers cannot hold unlimited connections', async t => {
+  const forwarder = await startMobileForwarder({ gateway: { port: 1, certificate: 'unused', fingerprint: '0'.repeat(64) }, expectedHost: 'mobile.example', allowedPaths: ['/mobile'], maxConcurrent: 1, deadlineMs: 500 });
+  t.after(() => forwarder.close());
+  const first = net.connect(forwarder.port, '127.0.0.1');
+  await once(first, 'connect');
+  first.write('GET /mobile HTTP/1.1\r\nHost: mobile.example\r\n');
+  const second = net.connect(forwarder.port, '127.0.0.1');
+  second.on('error', () => {});
+  await once(second, 'close');
+  assert.equal(first.destroyed, false);
+  first.destroy();
 });
