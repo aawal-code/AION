@@ -6,7 +6,7 @@ const DB_PATH = process.env.AION_SECURITY_DB_PATH || path.resolve('data/security
 const SESSION_TTL = 20 * 60_000;
 const CHALLENGE_TTL = 2 * 60_000;
 const BOOTSTRAP_TTL = 5 * 60_000;
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 const PAIRING_TTL = 5 * 60_000;
 let dbPromise;
 
@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS desktop_bootstrap_sessions (id TEXT PRIMARY KEY, toke
 CREATE TABLE IF NOT EXISTS device_capabilities (device_id TEXT NOT NULL, capability TEXT NOT NULL, granted_at TEXT NOT NULL, PRIMARY KEY(device_id, capability), FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE);`);
       db.exec(`CREATE TABLE IF NOT EXISTS device_transport_certificates (device_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE, certificate TEXT NOT NULL, bound_at TEXT NOT NULL, FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE);`);
       db.exec(`CREATE TABLE IF NOT EXISTS pairing_invitations (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL, display_code TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, claimed_at TEXT, claimed_name TEXT, claimed_public_key TEXT, claimed_transport_fingerprint TEXT, claimed_transport_certificate TEXT, approved_at TEXT, approved_device_id TEXT, cancelled_at TEXT, FOREIGN KEY(created_by) REFERENCES devices(id), FOREIGN KEY(approved_device_id) REFERENCES devices(id));`);
+      db.exec(`CREATE TABLE IF NOT EXISTS browser_pairing_invitations (id TEXT PRIMARY KEY, hostname TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('trusted','limited')), challenge TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, claimed_at TEXT, claimed_name TEXT, claimed_public_key TEXT, verification_code TEXT, approved_at TEXT, approved_device_id TEXT, cancelled_at TEXT, FOREIGN KEY(created_by) REFERENCES devices(id), FOREIGN KEY(approved_device_id) REFERENCES devices(id));`);
       const meta = db.prepare('SELECT version FROM schema_meta LIMIT 1').get();
       if (!meta) db.prepare('INSERT INTO schema_meta(version) VALUES (?)').run(SCHEMA_VERSION);
       else if (meta.version > SCHEMA_VERSION) throw new Error('Security storage was created by a newer AION version');
@@ -164,6 +165,58 @@ export async function getPairingInvitationStatus(invitationId) {
   const row = (await database()).prepare('SELECT id,expires_at AS expiresAt,claimed_at AS claimedAt,approved_at AS approvedAt,cancelled_at AS cancelledAt,approved_device_id AS deviceId FROM pairing_invitations WHERE id=?').get(String(invitationId || ''));
   if (!row || row.cancelledAt || Date.parse(row.expiresAt) <= Date.now()) throw new Error('Pairing invitation is invalid or expired');
   return { invitationId: row.id, expiresAt: row.expiresAt, status: row.approvedAt ? 'approved' : row.claimedAt ? 'pending-owner-approval' : 'awaiting-device', deviceId: row.approvedAt ? row.deviceId : null };
+}
+
+// Browser invitations are separate from host-to-host TLS certificate pairing.
+// They remain unreachable from a remote gateway until its security gates pass.
+export async function createBrowserPairingInvitation({ hostname, role = ROLES.LIMITED }, actor) {
+  if (!actor || actor.role !== ROLES.OWNER) throw new Error('Owner authorization required');
+  if (![ROLES.TRUSTED, ROLES.LIMITED].includes(role)) throw new Error('Only Trusted or Limited devices can be approved');
+  if (typeof hostname !== 'string' || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]+\.ts\.net$/i.test(hostname)) throw new Error('A valid Tailscale hostname is required');
+  const db = await database(), id = random(), challenge = random(), expiresAt = future(PAIRING_TTL);
+  db.prepare('INSERT INTO browser_pairing_invitations(id,hostname,role,challenge,created_by,created_at,expires_at) VALUES (?,?,?,?,?,?,?)').run(id, hostname.toLowerCase(), role, challenge, actor.deviceId, now(), expiresAt);
+  audit(db, 'browser_pairing.created', actor.deviceId, { expiresAt, role });
+  return { invitationId: id, hostname: hostname.toLowerCase(), expiresAt };
+}
+export async function getBrowserPairingChallenge(invitationId, hostname) {
+  const db = await database();
+  const row = db.prepare('SELECT id,hostname,role,challenge,expires_at,claimed_at,approved_at,cancelled_at FROM browser_pairing_invitations WHERE id=?').get(String(invitationId || ''));
+  if (!row || row.hostname !== hostname || row.claimed_at || row.approved_at || row.cancelled_at || Date.parse(row.expires_at) <= Date.now()) throw new Error('Pairing invitation is invalid or expired');
+  return { invitationId: row.id, hostname: row.hostname, role: row.role, challenge: row.challenge, expiresAt: row.expires_at };
+}
+export async function claimBrowserPairingInvitation({ invitationId, hostname, name: deviceName, publicKey: value, signature }) {
+  const key = publicKey(value), db = await database(); db.exec('BEGIN IMMEDIATE');
+  try {
+    const row = db.prepare('SELECT * FROM browser_pairing_invitations WHERE id=?').get(String(invitationId || ''));
+    if (!row || row.hostname !== hostname || row.claimed_at || row.approved_at || row.cancelled_at || Date.parse(row.expires_at) <= Date.now()) throw new Error('Pairing invitation is invalid or expired');
+    const payload = `aion-browser-pairing-v1:${row.id}:${row.hostname}:${row.role}:${row.challenge}:${hash(key)}`;
+    if (!crypto.verify(null, Buffer.from(payload), key, Buffer.from(String(signature || ''), 'base64url'))) throw new Error('Device proof is invalid');
+    const code = pairingCode();
+    if (db.prepare('UPDATE browser_pairing_invitations SET claimed_at=?,claimed_name=?,claimed_public_key=?,verification_code=? WHERE id=? AND claimed_at IS NULL').run(now(), name(deviceName, 'Phone'), key, code, row.id).changes !== 1) throw new Error('Pairing invitation was already claimed');
+    audit(db, 'browser_pairing.claimed', null); db.exec('COMMIT');
+    return { status: 'pending-owner-approval', verificationCode: code, expiresAt: row.expires_at };
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
+export async function listBrowserPairingRequests(actor) {
+  if (!actor || actor.role !== ROLES.OWNER) throw new Error('Owner authorization required');
+  return (await database()).prepare('SELECT id,hostname,role,expires_at AS expiresAt,claimed_name AS name,verification_code AS verificationCode FROM browser_pairing_invitations WHERE claimed_at IS NOT NULL AND approved_at IS NULL AND cancelled_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 50').all(now());
+}
+export async function approveBrowserPairingInvitation({ invitationId, verificationCode }, actor) {
+  if (!actor || actor.role !== ROLES.OWNER) throw new Error('Owner authorization required');
+  const db = await database(); db.exec('BEGIN IMMEDIATE');
+  try {
+    const row = db.prepare('SELECT * FROM browser_pairing_invitations WHERE id=?').get(String(invitationId || ''));
+    if (!row || !row.claimed_at || row.approved_at || row.cancelled_at || Date.parse(row.expires_at) <= Date.now()) throw new Error('Pairing invitation is not awaiting approval');
+    if (!equal(row.verification_code, verificationCode)) throw new Error('Verification code does not match');
+    const id = crypto.randomUUID();
+    db.prepare('INSERT INTO devices(id,name,public_key,role,created_at,revoked_at) VALUES (?,?,?,?,?,NULL)').run(id, row.claimed_name, row.claimed_public_key, row.role, now());
+    const grants = capabilitiesForRole(row.role).filter(capability => capability !== 'sync:replicate');
+    const insert = db.prepare('INSERT INTO device_capabilities(device_id,capability,granted_at) VALUES (?,?,?)');
+    for (const capability of grants) insert.run(id, capability, now());
+    db.prepare('UPDATE browser_pairing_invitations SET approved_at=?,approved_device_id=? WHERE id=?').run(now(), id, row.id);
+    audit(db, 'browser_pairing.approved', id, { role: row.role, actor: actor.deviceId }); db.exec('COMMIT');
+    return { deviceId: id, role: row.role, capabilities: grants };
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
 export async function createChallenge(deviceId) {
   const db = await database();
